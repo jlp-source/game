@@ -119,9 +119,14 @@ const PART_SPOTS = {
   'Spark Plug': { x: GEN.x + 9,  z: GEN.z + 8 },
   'Drive Belt': { x: GEN.x - 4,  z: GEN.z - 13 },
 };
-/* the log shed sits on the old walk halfway between the cabin and the crash —
-   as near to "a hundred metres from each" as geometry allows (they're ~240 apart) */
-const SHED = { x: Math.round((CABIN.x + 3) / 2), z: Math.round((CABIN.z + 6) / 2) };
+/* the log shed stands a hundred metres off the cabin walk (perpendicular from
+   its midpoint), so the direct path to the cabin never brushes it — only its
+   own worn spurs lead there */
+const SHED = (() => {
+  const a = { x: 3, z: 6 }, b = cabRot(0, 6.5); // the cabin walk's endpoints
+  const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+  return { x: Math.round((a.x + b.x) / 2 + dz / L * 100), z: Math.round((a.z + b.z) / 2 - dx / L * 100) };
+})();
 const SHED_ROT = Math.atan2(3 - SHED.x, 6 - SHED.z); // its door looks toward the crash
 
 /* the walked trails — defined early so the forest leaves them clear.
@@ -677,6 +682,8 @@ function terrainHeight(x, z) {
   h = lerp(h, 0.25, sstep(POND.r + 26, POND.r + 6, pd) * 0.95);
   h = lerp(h, -1.6, sstep(POND.r + 4, 5, pd));
   h += 15 * sstep(62, 10, Math.hypot(x - HILL.x, z - HILL.z));          // the great hill
+  // a level pad under the shed so its sills sit true
+  h = lerp(h, baseHeight(SHED.x, SHED.z), sstep(14, 5, Math.hypot(x - SHED.x, z - SHED.z)));
   // the banks dip to meet the footbridge
   const bApproach = sstep(6, 2, Math.abs(z - MAPCFG.bridgeZ)) * sstep(17, 13, Math.abs(x - MAPCFG.riverX));
   if (bApproach > 0) h = lerp(h, Math.min(h, 0.35), bApproach);
@@ -736,8 +743,17 @@ function playerGroundY(x, z) {
   let g = Math.max(gridHeight(x, z), -0.75);
   if (Math.hypot(x, z) < 14) g += gougeRelief(x, z);
   if (onBridge(x, z)) g = Math.max(g, BRIDGE.deckY);
+  // inside the cabin you stand on its plank floor, not the uneven dirt it was
+  // built over — the floor hangs from the cabin's base height at its centre
+  const cdx = x - CABIN.x, cdz = z - CABIN.z;
+  if (Math.abs(cdx) < 8 && Math.abs(cdz) < 8) {
+    const c = Math.cos(0.5), s = Math.sin(0.5);
+    const lx = cdx * c - cdz * s, lz = cdx * s + cdz * c;
+    if (Math.abs(lx) < 5.2 && Math.abs(lz) < 3.95) g = Math.max(g, CABIN_FLOOR_Y);
+  }
   return g;
 }
+const CABIN_FLOOR_Y = gridHeight(CABIN.x, CABIN.z) + 0.17; // the plank floor's walking surface
 
 {
   const geo = new THREE.PlaneGeometry(TSIZE, TSIZE, TSEG, TSEG);
@@ -1013,7 +1029,7 @@ function placeOK(x, z, clearCrash = true) {
   if (Math.hypot(x - HOLLOW.x, z - HOLLOW.z) < 14) return false;
   if (Math.hypot(x - HILL.x, z - HILL.z) < 10) return false;
   if (Math.hypot(x - GEN.x, z - GEN.z) < 8) return false; // the generator's little clearing
-  if (Math.hypot(x - SHED.x, z - SHED.z) < 8) return false; // the shed's clearing
+  if (Math.hypot(x - SHED.x, z - SHED.z) < 9) return false; // the shed's clearing
   for (const k in PART_SPOTS)
     if (Math.hypot(x - PART_SPOTS[k].x, z - PART_SPOTS[k].z) < 2.6) return false;
   for (const c of CACHES) if (Math.hypot(x - c.x, z - c.z) < 3) return false;
@@ -3411,10 +3427,10 @@ function shedRot(px, pz) { // shed local -> world
   g.rotation.y = SHED_ROT;
   const logA = mat(0x5d4a30, { map: barkTex }), logB = mat(0x4e3d27, { map: barkTex }),
         plankM = mat(0x6a5436, { map: barkTex }), iron = mat(0x3a352c, { shininess: 30 });
-  const W = 3.6, D = 2.9, R = 0.11;
+  const W = 5.2, D = 4.2, R = 0.12, DOOR = 0.7;
   // stacked-log walls, doorway on the crash-facing side
-  for (let r = 0; r < 10; r++) {
-    const ry = 0.15 + r * 0.23, rm = r % 2 ? logA : logB;
+  for (let r = 0; r < 11; r++) {
+    const ry = 0.15 + r * 0.24, rm = r % 2 ? logA : logB;
     for (const s of [-1, 1]) {
       const c = new THREE.Mesh(new THREE.CylinderGeometry(R, R, D + 0.3, 7), rm);
       c.rotation.x = Math.PI / 2;
@@ -3425,48 +3441,71 @@ function shedRot(px, pz) { // shed local -> world
     back.rotation.z = Math.PI / 2;
     back.position.set(0, ry, -D / 2);
     g.add(back);
-    if (ry > 1.95) { // header logs carry on over the doorway
+    if (ry > 2.1) { // header logs carry on over the doorway
       const h = new THREE.Mesh(new THREE.CylinderGeometry(R, R, W + 0.3, 7), rm);
       h.rotation.z = Math.PI / 2;
       h.position.set(0, ry, D / 2);
       g.add(h);
     } else {
-      const segLen = W / 2 - 0.55;
+      const segLen = W / 2 - DOOR;
       for (const s of [-1, 1]) {
         const c = new THREE.Mesh(new THREE.CylinderGeometry(R, R, segLen, 7), rm);
         c.rotation.z = Math.PI / 2;
-        c.position.set(s * (0.55 + segLen / 2), ry, D / 2);
+        c.position.set(s * (DOOR + segLen / 2), ry, D / 2);
         g.add(c);
       }
     }
   }
   // door jambs, corner posts, a packed plank floor
   for (const s of [-1, 1]) {
-    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.05, 0.26), plankM);
-    jamb.position.set(s * 0.62, 1.02, D / 2);
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.25, 0.28), plankM);
+    jamb.position.set(s * (DOOR + 0.07), 1.12, D / 2);
     g.add(jamb);
   }
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 2.5, 7), logB);
-    post.position.set(sx * W / 2, 1.2, sz * D / 2);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 2.85, 7), logB);
+    post.position.set(sx * W / 2, 1.35, sz * D / 2);
     g.add(post);
   }
   const floor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.08, D - 0.2), mat(0x4a3a24, { map: barkTex }));
   floor.position.y = 0.05;
   g.add(floor);
-  // single-pitch roof, high over the door, battened in courses
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 0.9, 0.1, D + 1.2), plankM);
-  slab.position.set(0, 2.62, -0.1);
-  slab.rotation.x = -0.2;
-  g.add(slab);
-  for (const u of [-1.1, 0, 1.1]) {
-    const bat = new THREE.Mesh(new THREE.BoxGeometry(W + 0.9, 0.05, 0.14), logB);
-    bat.position.set(0, 2.68 + u * Math.sin(0.2), -0.1 + u * Math.cos(0.2));
-    g.add(bat);
+  // a proper gabled roof: two plank slopes to a ridge log, battened in courses,
+  // with plank gables closing the ends (same construction as the cabin's)
+  const wallTop = 0.15 + 10 * 0.24 + R;
+  const PITCH = 0.45, HSPAN = D / 2 + 0.75;
+  const RISE = HSPAN * Math.tan(PITCH), SLOPE = HSPAN / Math.cos(PITCH);
+  for (const s of [-1, 1]) {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 1.3, 0.12, SLOPE), plankM);
+    slab.position.set(0, wallTop + RISE / 2 + 0.05, s * HSPAN / 2);
+    slab.rotation.x = s * PITCH; // ridge high, eaves low
+    g.add(slab);
+    for (const u of [-1.0, 0.1, 1.1]) { // board courses so the slope reads as planks
+      const bat = new THREE.Mesh(new THREE.BoxGeometry(W + 1.3, 0.06, 0.14), logB);
+      bat.position.set(0, wallTop + RISE / 2 + 0.12 - s * u * Math.sin(PITCH), s * HSPAN / 2 + u * Math.cos(PITCH));
+      g.add(bat);
+    }
+  }
+  const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, W + 1.4, 7), logB);
+  ridge.rotation.z = Math.PI / 2;
+  ridge.position.set(0, wallTop + RISE + 0.08, 0);
+  g.add(ridge);
+  { // gable triangles
+    const tri = new THREE.Shape();
+    tri.moveTo(-HSPAN, 0); tri.lineTo(HSPAN, 0); tri.lineTo(0, RISE);
+    tri.closePath();
+    const triGeo = new THREE.ShapeGeometry(tri);
+    const gableM = mat(0x624c30, { map: barkTex, side: THREE.DoubleSide });
+    for (const s of [-1, 1]) {
+      const gable = new THREE.Mesh(triGeo, gableM);
+      gable.position.set(s * W / 2, wallTop, 0);
+      gable.rotation.y = s * Math.PI / 2;
+      g.add(gable);
+    }
   }
   // the box: a joined plank chest with iron straps, its lid thrown back
   const chest = new THREE.Group();
-  chest.position.set(-0.85, 0.09, -0.65);
+  chest.position.set(-1.55, 0.09, -1.25);
   chest.rotation.y = 0.35;
   for (let i = 0; i < 3; i++) {
     const bm2 = i % 2 ? plankM : logA;
@@ -3526,20 +3565,23 @@ function shedRot(px, pz) { // shed local -> world
   });
   enableShadows(g);
   scene.add(g);
-  addInteractable(roll, 'note', 'Take the map from the box', 'shed-map', { note: SHED_NOTE });
+  addInteractable(roll, 'note', 'Take the map from the box', 'shed-map', { note: SHED_NOTE, onRead: () => {
+    state.shedMapRead = true;
+    if (state.quest === 6) toast(`The tower on the great hill, ${compassWord(HILL)} of the wreck. The map knows the way.`);
+  } });
   // wall collision, doorway open
   const shedSegs = [
     [-W / 2, -D / 2, W / 2, -D / 2],
     [-W / 2, -D / 2, -W / 2, D / 2],
     [W / 2, -D / 2, W / 2, D / 2],
-    [-W / 2, D / 2, -0.55, D / 2],
-    [0.55, D / 2, W / 2, D / 2],
+    [-W / 2, D / 2, -DOOR, D / 2],
+    [DOOR, D / 2, W / 2, D / 2],
   ];
   for (const s of shedSegs) {
     const a = shedRot(s[0], s[1]), b = shedRot(s[2], s[3]);
     wallSegs.push({ x1: a.x, z1: a.z, x2: b.x, z2: b.z, open: false });
   }
-  addCollider(shedRot(-0.85, -0.65).x, shedRot(-0.85, -0.65).z, 0.5); // the chest blocks
+  addCollider(shedRot(-1.55, -1.25).x, shedRot(-1.55, -1.25).z, 0.55); // the chest blocks
 }
 
 /* cabin quest fixtures: locked door, back garden, the body, the letter */
@@ -3601,7 +3643,12 @@ const keyRock = Object.assign({ searched: false }, cabRot(3.0, 6.2));
   letter.rotation.z = 0.65; // squared to the table, knocked a little askew
   scene.add(letter);
   addInteractable(letter, 'note', 'Read the letter', 'letter', { note: CABIN_LETTER, onRead: () => {
-    if (state.quest < 6) { state.quest = 6; toast(`A watch tower, on the great hill. ${compassWord(HILL)[0].toUpperCase() + compassWord(HILL).slice(1)}.`); }
+    if (state.quest < 6) {
+      state.quest = 6;
+      toast(state.shedMapRead
+        ? `A watch tower, on the great hill. ${compassWord(HILL)[0].toUpperCase() + compassWord(HILL).slice(1)}.`
+        : 'He kept a shed out in the trees. The path from the porch leads to it.');
+    }
     // it heard you find it. Two seconds of quiet — then it runs the length of the
     // cabin wall and hits it, once, hard. Seven seconds you will not forget.
     if (!state.letterScare) {
@@ -6564,7 +6611,10 @@ function objectiveText() {
     case 3: txt = 'The cabin is locked. One pale stone by the porch sits wrong — look under it.'; break;
     case 4: txt = 'Unlock the cabin door with the key.'; break;
     case 5: txt = 'Someone is inside the cabin. Read the letter.'; break;
-    case 6: txt = `Reach the watch tower on the great hill, ${compassWord(HILL)} (${dist(HILL)}).`; break;
+    case 6: txt = state.shedMapRead
+      ? `Reach the watch tower on the great hill, ${compassWord(HILL)} (${dist(HILL)}).`
+      : `Follow the path from the cabin to the shed (${dist(SHED)}).`;
+      break;
     case 7: {
       const got = GEN_PARTS.filter(k => has({ [k]: 1 })).length;
       txt = got >= 3
