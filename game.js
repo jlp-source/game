@@ -181,9 +181,10 @@ const SCENE_SPOTS = (() => {
   };
 })();
 
-/* rough compass direction of a point as seen from the crash site */
-function compassWord(p) {
-  const deg = ((Math.atan2(p.x, -p.z) * 180 / Math.PI) + 360) % 360;
+/* rough compass direction of a point, seen from the crash site by default */
+function compassWord(p, from) {
+  const fx = from ? from.x : 0, fz = from ? from.z : 0;
+  const deg = ((Math.atan2(p.x - fx, -(p.z - fz)) * 180 / Math.PI) + 360) % 360;
   const words = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
   return words[Math.round(deg / 45) % 8];
 }
@@ -1036,6 +1037,8 @@ function placeOK(x, z, clearCrash = true) {
   if (Math.hypot(x - SHED.x, z - SHED.z) < 9) return false; // the shed's clearing
   for (const k in PART_SPOTS)
     if (Math.hypot(x - PART_SPOTS[k].x, z - PART_SPOTS[k].z) < 2.6) return false;
+  for (const p of MAPCFG.pieces || [])
+    if (Math.hypot(x - p.x, z - p.z) < 2.6) return false; // the pages stay in the open
   for (const c of CACHES) if (Math.hypot(x - c.x, z - c.z) < 3) return false;
   if (Math.hypot(x - PLANK_SPOT.x, z - PLANK_SPOT.z) < 3) return false;
   for (const k of ['camp', 'snare', 'cairn'])
@@ -1087,6 +1090,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     if (nearWater(p.x, p.z)) continue;
     if (Math.hypot(p.x - FIRE.x, p.z - FIRE.z) < 8) continue;
     if (nearTrail(p.x, p.z, 2.8)) continue; // the stand parts where the path leaves the clearing
+    if ((MAPCFG.pieces || []).some(pp => Math.hypot(p.x - pp.x, p.z - pp.z) < 3)) continue; // and around the pages
     pines.push(p);
     treeData.push({ x: p.x, z: p.z, harvests: 3 });
   }
@@ -3384,10 +3388,19 @@ BLIND_NOTE.img = makeRouteMap({
 MAPCFG.pieces.slice(0, 4).forEach((p, i) => { MAP_PIECES[i + 1].x = p.x; MAP_PIECES[i + 1].z = p.z; });
 for (let i = 1; i < MAP_PIECES.length; i++) {
   const n = MAP_PIECES[i];
+  const gy = groundY(n.x, n.z);
+  // each page sits propped against a fist of stone at the clearing's edge,
+  // pale and upright and facing the wreck, instead of flat where the grass hides it
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.17, 0), mat(0x83837c));
+  rock.position.set(n.x - Math.sign(n.x || 1) * 0.14, gy + 0.1, n.z - Math.sign(n.z || 1) * 0.14);
+  rock.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+  scene.add(rock);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.75), paperM);
-  m.position.set(n.x, groundY(n.x, n.z) + 0.03, n.z); // flat on the ground
-  m.rotation.x = -Math.PI / 2;
-  m.rotation.z = rng() * Math.PI * 2;
+  m.rotation.order = 'YXZ';
+  m.position.set(n.x, gy + 0.3, n.z);
+  m.rotation.y = Math.atan2(-n.x, -n.z); // turned toward the crash
+  m.rotation.x = -0.5;                   // leaning back against its stone
+  m.rotation.z = (rng() - 0.5) * 0.4;
   scene.add(m);
   addInteractable(m, 'note', 'Read the page', 'piece' + i, { note: n, onRead: foundPiece });
 }
@@ -6622,7 +6635,19 @@ function objectiveText() {
   let txt;
   switch (state.quest) {
     case 0: txt = 'Search the luggage scattered around the wreck.'; break;
-    case 1: txt = `Find the other notes — ${state.pieces}/5.`; break;
+    case 1: {
+      txt = `Find the other notes — ${state.pieces}/5.`;
+      let near = null, nd = 1e9; // point the way to the closest unread page
+      for (let i = 1; i < MAP_PIECES.length; i++) {
+        const n = MAP_PIECES[i];
+        if (state.notesRead.includes(n)) continue;
+        const d = Math.hypot(state.pos.x - n.x, state.pos.z - n.z);
+        if (d < nd) { nd = d; near = n; }
+      }
+      if (near) txt += ` A pale page lies ${compassWord(near, state.pos)} of you (${Math.round(nd)}m).`;
+      else txt += ' The last is packed away in the luggage at the wreck.';
+      break;
+    }
     case 2: txt = `Follow the path to the cabin, ${compassWord(CABIN)} (${dist(CABIN)}).`; break;
     case 3: txt = 'The cabin is locked. One pale stone by the porch sits wrong — look under it.'; break;
     case 4: txt = 'Unlock the cabin door with the key.'; break;
