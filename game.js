@@ -68,13 +68,11 @@ const NIGHTS = {
   7: { sil: 6, aud: 5, storm: false },
 };
 
-const FOOD = { Grubs: 8, Berries: 15, Rations: 25 };
 
 const ITEM_HINTS = {
   'Small Stick': 'dry kindling', Stick: 'firewood', Branch: 'heavy firewood',
   Pebble: 'a smooth stone', Stone: 'a heavy stone', Mud: 'cold river mud',
-  Leaves: 'soft leaves', Berries: 'heals — press F',
-  Grubs: 'heals — press F', Rations: 'heals — press F',
+  Leaves: 'soft leaves',
   'Key': 'opens the cabin',
   Flashlight: 'pushes the dark back a little — F switches it on and off',
   Battery: 'for the generator',
@@ -111,8 +109,8 @@ const GEN = (() => {
   return { x: Math.round(HILL.x + dx / d * 95), z: Math.round(HILL.z + dz / d * 95) };
 })();
 const GEN_PARTS = ['Battery', 'Spark Plug', 'Drive Belt'];
-/* the bridge's missing plank washed up twenty metres shy of it, beside the path */
-const PLANK_SPOT = { x: MAPCFG.riverX - 33, z: MAPCFG.bridgeZ + 3 };
+/* the bridge's missing plank washed up twenty-odd metres shy of it, beside the path */
+const PLANK_SPOT = { x: MAPCFG.riverX - 24, z: MAPCFG.bridgeZ + 2 };
 /* where the stripped parts ended up, all within a short search of the machine */
 const PART_SPOTS = {
   Battery:      { x: GEN.x - 10, z: GEN.z + 7 },
@@ -137,21 +135,29 @@ const TRAIL_B = cabRot(0, 6.5);
 const TRAIL_LEN = Math.hypot(TRAIL_B.x - TRAIL_A.x, TRAIL_B.z - TRAIL_A.z);
 const TRAIL_LEGS = [
   { a: TRAIL_A, b: TRAIL_B },                                                  // crash -> cabin porch
-  { a: { x: 6, z: 1 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },      // crash -> the bridge
+  // crash -> the bridge, in two legs so the last stretch arrives square-on
+  // to the bridge instead of climbing diagonally across the bank
+  { a: { x: 6, z: 1 }, b: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 } },
+  { a: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },
   { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ },                           // over the river -> the hill
     b: { x: HILL.x - 10, z: HILL.z + 9 } },
-  // the trapper's round: the cabin path carries on PAST the cabin, swings
-  // around behind it, and comes back east to the shed; from the shed a spur
-  // re-enters the crash clearing on its north-east side, well away from the
-  // cabin path's mouth, so the two can't be mistaken for each other
-  { a: cabRot(-2, 8), b: { x: -232, z: 152 } },
-  { a: { x: -232, z: 152 }, b: SHED },
+  // the trapper's round: the cabin path carries on FROM the porch, sweeps in a
+  // gentle arc past and around behind the cabin, and flows east to the shed —
+  // five short true-running legs, so it reads as one worn winding path.
+  // From the shed a spur re-enters the crash clearing on its north-east side,
+  // well away from the cabin path's mouth, so the two can't be mistaken
+  { a: cabRot(0, 6.5), b: { x: -222, z: 146 } },
+  { a: { x: -222, z: 146 }, b: { x: -231, z: 160 } },
+  { a: { x: -231, z: 160 }, b: { x: -215, z: 172 } },
+  { a: { x: -215, z: 172 }, b: { x: -160, z: 170 } },
+  { a: { x: -160, z: 170 }, b: SHED },
   { a: SHED, b: { x: 7, z: 11 } }, // runs all the way in to the clearing's north edge
 ];
 function legNear(L, x, z, margin) {
   const dx = L.b.x - L.a.x, dz = L.b.z - L.a.z, len = Math.hypot(dx, dz);
   const t = clamp(((x - L.a.x) * dx + (z - L.a.z) * dz) / (dx * dx + dz * dz), 0, 1);
-  const wob = Math.sin(t * 9.2) * 6 + Math.sin(t * 23) * 2.5; // matches the ribbon's wander
+  // matches the ribbon's wander — scaled to the leg, so short legs run true
+  const wob = Math.sin(t * 9.2) * Math.min(6, len * 0.035) + Math.sin(t * 23) * Math.min(2.5, len * 0.015);
   const px = L.a.x + dx * t + dz / len * wob;
   const pz = L.a.z + dz * t - dx / len * wob;
   return Math.hypot(x - px, z - pz) < margin;
@@ -162,14 +168,8 @@ function nearTrail(x, z, margin) {
 }
 const TRAIL_PERP = { x: (TRAIL_B.z - TRAIL_A.z) / TRAIL_LEN, z: -(TRAIL_B.x - TRAIL_A.x) / TRAIL_LEN };
 
-/* supply caches tucked just off the long legs — worth stepping off the path for */
+/* the supply caches are gone — food left the game, and the crates went with it */
 const CACHES = [];
-{
-  const p = trailPoint(0.6); // trailPoint is hoisted; defined with the transit code
-  CACHES.push({ x: p.x - TRAIL_PERP.x * 8, z: p.z - TRAIL_PERP.z * 8, give: { Rations: 2 } });
-  CACHES.push({ x: 60, z: -48, give: { Berries: 4, Grubs: 2 } });   // south of the bridge path
-  CACHES.push({ x: 238, z: -76, give: { Rations: 1, Grubs: 3 } });  // under the hill, off the power line
-}
 /* hand-placed scenes along the walking routes — reasons to look sideways */
 const SCENE_SPOTS = (() => {
   const camp = trailPoint(0.35);
@@ -697,8 +697,12 @@ function terrainHeight(x, z) {
   h += 15 * sstep(62, 10, Math.hypot(x - HILL.x, z - HILL.z));          // the great hill
   // a level pad under the shed so its sills sit true
   h = lerp(h, baseHeight(SHED.x, SHED.z), sstep(14, 5, Math.hypot(x - SHED.x, z - SHED.z)));
-  // the banks dip to meet the footbridge
-  const bApproach = sstep(6, 2, Math.abs(z - MAPCFG.bridgeZ)) * sstep(17, 13, Math.abs(x - MAPCFG.riverX));
+  // and one under the cabin: it was built on a slope, and where the ground
+  // rose toward the porch the whole building stood sunken and short
+  h = lerp(h, baseHeight(CABIN.x, CABIN.z), sstep(17, 8, Math.hypot(x - CABIN.x, z - CABIN.z)));
+  // the banks open into a broad, gentle saddle where the footbridge crosses —
+  // the old narrow notch cut a sheer trench through the bankside hills
+  const bApproach = sstep(12, 3, Math.abs(z - MAPCFG.bridgeZ)) * sstep(30, 12, Math.abs(x - MAPCFG.riverX));
   if (bApproach > 0) h = lerp(h, Math.min(h, 0.35), bApproach);
   return h;
 }
@@ -2562,13 +2566,6 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     g.rotation.y = 0.5;
     enableShadows(g);
     scene.add(g);
-    // a crate inside, still shut
-    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.55), mat(0x6e5a3a));
-    const cw = { x: CABIN.x + 3.0 * Math.cos(0.5) + 1.6 * Math.sin(0.5), z: CABIN.z - 3.0 * Math.sin(0.5) + 1.6 * Math.cos(0.5) };
-    crate.position.set(cw.x, y + 0.28, cw.z);
-    crate.rotation.y = 0.3;
-    scene.add(crate);
-    addInteractable(crate, 'search', 'old crate', 'crate', { give: { Rations: 2 } });
   }
 
   /* the mud path from the crash clearing to the cabin: one continuous trodden
@@ -2629,7 +2626,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     function buildRibbon(A, B) {
       const LEN = Math.hypot(B.x - A.x, B.z - A.z);
       const trailPt = t => {
-        const wob = Math.sin(t * 9.2) * 6 + Math.sin(t * 23) * 2.5;
+        const wob = Math.sin(t * 9.2) * Math.min(6, LEN * 0.035) + Math.sin(t * 23) * Math.min(2.5, LEN * 0.015);
         return {
           x: lerp(A.x, B.x, t) + (B.z - A.z) / LEN * wob,
           z: lerp(A.z, B.z, t) - (B.x - A.x) / LEN * wob,
@@ -2761,17 +2758,18 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     }
     for (const L of TRAIL_LEGS) { // and thicker along every walked leg
       const llen = Math.hypot(L.b.x - L.a.x, L.b.z - L.a.z);
-      for (let i = 0; i < 6; i++) {
+      const wobA = Math.min(6, llen * 0.035), wobB = Math.min(2.5, llen * 0.015);
+      for (let i = 0, n = clamp(Math.round(llen / 38), 1, 6); i < n; i++) {
         const t = 0.12 + rng() * 0.8;
-        const wob = Math.sin(t * 9.2) * 6 + Math.sin(t * 23) * 2.5;
+        const wob = Math.sin(t * 9.2) * wobA + Math.sin(t * 23) * wobB;
         const off = (rng() - 0.5) * 7;
         const gx = lerp(L.a.x, L.b.x, t) + (L.b.z - L.a.z) / llen * (wob + off);
         const gz = lerp(L.a.z, L.b.z, t) - (L.b.x - L.a.x) / llen * (wob + off);
         if (!nearWater(gx, gz)) gore(gx, gz, rng() < 0.45);
       }
-      // small cairns where each leg is hardest to see
-      for (const ct of [0.3, 0.62, 0.85]) {
-        const wob = Math.sin(ct * 9.2) * 6;
+      // small cairns where each leg is hardest to see (long legs only)
+      for (const ct of (llen < 70 ? [0.55] : [0.3, 0.62, 0.85])) {
+        const wob = Math.sin(ct * 9.2) * wobA;
         const cx2 = lerp(L.a.x, L.b.x, ct) + (L.b.z - L.a.z) / llen * wob + 1.6;
         const cz2 = lerp(L.a.z, L.b.z, ct) - (L.b.x - L.a.x) / llen * wob;
         if (nearWater(cx2, cz2)) continue;
@@ -2830,7 +2828,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     pack.position.set(CAMPSITE.x + 1.2, y + 0.25, CAMPSITE.z + 1.8);
     pack.rotation.set(0.4, 0.8, 0.3); // tipped over
     scene.add(pack);
-    addInteractable(pack, 'search', 'abandoned pack', 'pack', { give: { Rations: 1, Berries: 2 } });
+    addInteractable(pack, 'search', 'abandoned pack', 'pack', {});
   }
 
   /* the hollow — bare, sunken, wrong. the story ends here */
@@ -2906,7 +2904,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     cache.position.set(BLIND.x + 0.6, y + 1.1, BLIND.z - 0.3);
     cache.rotation.y = 0.4;
     scene.add(cache);
-    addInteractable(cache, 'search', "hunter's cache", 'cache', { give: { Rations: 2 } });
+    addInteractable(cache, 'search', "hunter's cache", 'cache', {});
   }
 }
 
@@ -2999,7 +2997,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
         const bundle = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.3), mat(0x4a5a40));
         bundle.position.set(bx + 1.6, groundY(bx + 1.6, bz) + 0.15, bz);
         scene.add(bundle);
-        addInteractable(bundle, 'search', 'abandoned bundle', 'bundle' + bx, { give: { Rations: 1 } });
+        addInteractable(bundle, 'search', 'abandoned bundle', 'bundle' + bx, {});
         break;
       }
       case 'ruin': { // the corner of something that used to be a building
@@ -3367,13 +3365,14 @@ function makeRouteMap(opts) {
 }
 
 /* no map at the wreck any more — the way is handed on one leg at a time:
-   the cabin letter shows the blind; the blind shows the bridge and the tower */
+   the cabin letter shows the shed; the trapper's map there shows the tower */
 CABIN_LETTER.img = makeRouteMap({
   spots: [
     { x: CABIN.x, z: CABIN.z, type: 'cabin', label: 'the cabin' },
-    { x: BLIND.x, z: BLIND.z, type: 'blind', label: 'my blind' },
+    { x: SHED.x, z: SHED.z, type: 'shed', label: 'the shed' },
   ],
-  route: [{ x: CABIN.x, z: CABIN.z }, { x: BLIND.x, z: BLIND.z }],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: -222, z: 146 }, { x: -231, z: 160 },
+          { x: -215, z: 172 }, { x: -160, z: 170 }, { x: SHED.x, z: SHED.z }],
 });
 const BLIND_NOTE = { title: 'A map, weighted with a shell casing', body:
 `If the cabin has gone wrong, do not go back for anything.
@@ -4266,7 +4265,7 @@ I am leaving the tent and the pans. Weight is life now. If you find this camp, t
     g.add(pack);
     enableShadows(g);
     scene.add(g);
-    addInteractable(pack, 'search', 'abandoned pack', 'camp-pack', { give: { Rations: 1 } });
+    addInteractable(pack, 'search', 'abandoned pack', 'camp-pack', {});
     const noteM = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.68), paperM);
     noteM.position.set(s.x + 1.1, sy + 0.03, s.z + 2.3);
     noteM.rotation.x = -Math.PI / 2;
@@ -6304,19 +6303,7 @@ function findAction() {
   return null;
 }
 
-function eatFood() {
-  if (state.health >= 100) { toast('You feel fine.'); return; }
-  for (const f of ['Grubs', 'Berries', 'Rations']) {
-    if ((state.inv[f] || 0) > 0) {
-      take({ [f]: 1 });
-      state.health = clamp(state.health + FOOD[f], 0, 100);
-      toast('Ate ' + f + ' (+' + FOOD[f] + ' health)');
-      audio.blip();
-      return;
-    }
-  }
-  toast('Nothing to eat.');
-}
+/* food left the game — health mends slowly on its own, and F is the torch */
 
 /* ---------------- input ---------------- */
 const keys = {};
@@ -6362,7 +6349,7 @@ addEventListener('keydown', e => {
       state.torchOn = !state.torchOn;
       audio.blip();
       toast(state.torchOn ? 'Flashlight on.' : 'Flashlight off.');
-    } else eatFood();
+    } else if (has({ Flashlight: 1 })) toast('Take the flashlight in hand first (press its number).');
   }
   if (k === 't') { state.absHours += 1; toast('An hour passes…'); }
 });
@@ -6642,10 +6629,20 @@ function objectiveText() {
     case 3: txt = 'The cabin is locked. One pale stone by the porch sits wrong — look under it.'; break;
     case 4: txt = 'Unlock the cabin door with the key.'; break;
     case 5: txt = 'Someone is inside the cabin. Read the letter.'; break;
-    case 6: txt = state.shedMapRead
-      ? `Reach the watch tower on the great hill, ${compassWord(HILL)} (${dist(HILL)}).`
-      : `Follow the path from the cabin to the shed (${dist(SHED)}).`;
+    case 6: {
+      // stepping onto the broken bridge takes over the objective until it's mended
+      if (!bridgeGap.fixed && (onBridge(state.pos.x, state.pos.z) ||
+          Math.hypot(state.pos.x - bridgeGap.x, state.pos.z - BRIDGE.z) < 4)) state.sawGap = true;
+      if (state.sawGap && !bridgeGap.fixed)
+        txt = has({ Plank: 1 })
+          ? `Lay the plank and fix the bridge (${dist({ x: bridgeGap.x, z: BRIDGE.z })}).`
+          : 'Find the missing wood plank and fix the bridge.';
+      else if (state.shedMapRead || state.sawGap)
+        txt = `Reach the watch tower on the great hill, ${compassWord(HILL)} (${dist(HILL)}).`;
+      else
+        txt = `Follow the path from the cabin to the shed (${dist(SHED)}).`;
       break;
+    }
     case 7: {
       const got = GEN_PARTS.filter(k => has({ [k]: 1 })).length;
       txt = got >= 3
@@ -6689,11 +6686,7 @@ function updateHUD(dt) {
   $('prompt').innerHTML = currentAction
     ? (currentAction.fn ? `<b>${currentAction.key}</b>${currentAction.label}` : currentAction.label)
     : '';
-  if (IS_TOUCH) {
-    $('btn-use').classList.toggle('dim', !(currentAction && currentAction.fn));
-    const fLabel = state.held === 'Flashlight' ? 'LIGHT' : 'EAT';
-    if ($('btn-food').textContent !== fLabel) $('btn-food').textContent = fLabel;
-  }
+  if (IS_TOUCH) $('btn-use').classList.toggle('dim', !(currentAction && currentAction.fn));
 
   // the edges of the world are always a little closed in; low health closes them further
   $('vignette').style.opacity = clamp(Math.max(0.62, 1 - state.health / 35), 0, 0.95);
