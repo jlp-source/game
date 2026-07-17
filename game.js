@@ -119,6 +119,10 @@ const PART_SPOTS = {
   'Spark Plug': { x: GEN.x + 9,  z: GEN.z + 8 },
   'Drive Belt': { x: GEN.x - 4,  z: GEN.z - 13 },
 };
+/* the log shed sits on the old walk halfway between the cabin and the crash —
+   as near to "a hundred metres from each" as geometry allows (they're ~240 apart) */
+const SHED = { x: Math.round((CABIN.x + 3) / 2), z: Math.round((CABIN.z + 6) / 2) };
+const SHED_ROT = Math.atan2(3 - SHED.x, 6 - SHED.z); // its door looks toward the crash
 
 /* the walked trails — defined early so the forest leaves them clear.
    One leaves the crash mud for the cabin; the other leaves the opposite side
@@ -131,6 +135,9 @@ const TRAIL_LEGS = [
   { a: { x: 6, z: 1 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },      // crash -> the bridge
   { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ },                           // over the river -> the hill
     b: { x: HILL.x - 10, z: HILL.z + 9 } },
+  // the trapper's round: cabin -> the shed -> back to the crash clearing
+  { a: cabRot(2.5, 5.5), b: SHED },
+  { a: SHED, b: { x: -1, z: 9 } },
 ];
 function legNear(L, x, z, margin) {
   const dx = L.b.x - L.a.x, dz = L.b.z - L.a.z, len = Math.hypot(dx, dz);
@@ -1006,6 +1013,7 @@ function placeOK(x, z, clearCrash = true) {
   if (Math.hypot(x - HOLLOW.x, z - HOLLOW.z) < 14) return false;
   if (Math.hypot(x - HILL.x, z - HILL.z) < 10) return false;
   if (Math.hypot(x - GEN.x, z - GEN.z) < 8) return false; // the generator's little clearing
+  if (Math.hypot(x - SHED.x, z - SHED.z) < 8) return false; // the shed's clearing
   for (const k in PART_SPOTS)
     if (Math.hypot(x - PART_SPOTS[k].x, z - PART_SPOTS[k].z) < 2.6) return false;
   for (const c of CACHES) if (Math.hypot(x - c.x, z - c.z) < 3) return false;
@@ -1314,15 +1322,32 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
   pillar.position.set(2.62, 1.94, 0);
   pillar.rotation.z = -0.52;
   plane.add(pillar);
-  // framed cabin windows, three a side, with the panel and seats behind the glass
+  // cabin windows, three a side — rounded-corner portholes like the real thing,
+  // each in a raised rounded surround rather than a boxy frame
+  function roundedRect(w, h, r) {
+    const s2 = new THREE.Shape();
+    const x0 = -w / 2, y0 = -h / 2;
+    s2.moveTo(x0 + r, y0);
+    s2.lineTo(x0 + w - r, y0); s2.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+    s2.lineTo(x0 + w, y0 + h - r); s2.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+    s2.lineTo(x0 + r, y0 + h); s2.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+    s2.lineTo(x0, y0 + r); s2.quadraticCurveTo(x0, y0, x0 + r, y0);
+    return s2;
+  }
+  const surround = roundedRect(0.64, 0.48, 0.2);
+  surround.holes.push(roundedRect(0.5, 0.34, 0.15));
+  const winFrameGeo = new THREE.ExtrudeGeometry(surround, { depth: 0.05, bevelEnabled: false });
+  const winGlassGeo = new THREE.ShapeGeometry(roundedRect(0.52, 0.36, 0.16));
   for (const s of [1, -1]) {
     for (let i = 0; i < 3; i++) {
       const fx = 2.0 - i * 0.85;
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.5, 0.07), frameM);
-      frame.position.set(fx, 1.52, s * 1.02);
+      const frame = new THREE.Mesh(winFrameGeo, frameM);
+      frame.position.set(fx, 1.52, s * 1.0);
+      if (s < 0) frame.rotation.y = Math.PI;
       plane.add(frame);
-      const win = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.38, 0.08), glass);
+      const win = new THREE.Mesh(winGlassGeo, glass);
       win.position.set(fx, 1.52, s * 1.03);
+      if (s < 0) win.rotation.y = Math.PI;
       plane.add(win);
     }
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.6, 0.44), mat(0x5a3c34));
@@ -1391,8 +1416,9 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
   const dpanel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.72), hullPlain);
   dpanel.position.y = -0.5;
   door.add(dpanel);
-  const dwin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.5), glass);
-  dwin.position.y = -0.35;
+  const dwin = new THREE.Mesh(new THREE.ShapeGeometry(roundedRect(0.5, 0.38, 0.15)), glass);
+  dwin.position.set(0.045, -0.35, 0);
+  dwin.rotation.y = Math.PI / 2;
   door.add(dwin);
   const dhandle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.16), frameM);
   dhandle.position.set(0.05, -0.75, 0.24);
@@ -3241,6 +3267,33 @@ function makeRouteMap(opts) {
       g.moveTo(sx2 - 3, sz2 + 1); g.lineTo(sx2 + 3, sz2 + 1);
       g.stroke();
       g.strokeRect(sx2 - 3, sz2 - 11, 6, 4);
+    } else if (p.type === 'pond') { // a wobbly-shored blob, hatched the old way
+      g.lineWidth = 1.4;
+      const pr = Math.max(9, (p.r || 15) / ext * span);
+      g.beginPath();
+      for (let a2 = 0; a2 <= 6.6; a2 += 0.45) {
+        const rr = pr + wobble();
+        const X = sx2 + Math.cos(a2) * rr, Y = sz2 + Math.sin(a2) * rr * 0.72;
+        if (a2 === 0) g.moveTo(X, Y); else g.lineTo(X, Y);
+      }
+      g.closePath(); g.stroke();
+      g.lineWidth = 1.0;
+      for (let i = -1; i <= 1; i++) {
+        g.beginPath();
+        g.moveTo(sx2 - pr * 0.5, sz2 + i * pr * 0.28); g.lineTo(sx2 + pr * 0.5, sz2 + i * pr * 0.28);
+        g.stroke();
+      }
+    } else if (p.type === 'shed') { // a squat lean-to square
+      g.lineWidth = 1.5;
+      g.strokeRect(sx2 - 4, sz2 - 3, 8, 6);
+      g.beginPath(); g.moveTo(sx2 - 5, sz2 - 3); g.lineTo(sx2 + 5, sz2 - 6); g.stroke();
+      g.beginPath(); g.moveTo(sx2 + 1, sz2 - 1); g.lineTo(sx2 + 1, sz2 + 3); g.stroke(); // the door
+    } else if (p.type === 'wreck') { // where it came down, marked with a cross
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.moveTo(sx2 - 4, sz2 - 4); g.lineTo(sx2 + 4, sz2 + 4);
+      g.moveTo(sx2 + 4, sz2 - 4); g.lineTo(sx2 - 4, sz2 + 4);
+      g.stroke();
     }
   }
   // treeline scribbles — little humps everywhere the route isn't
@@ -3248,7 +3301,7 @@ function makeRouteMap(opts) {
   for (let i = 0; i < 120; i++) {
     const tx = pad + Math.random() * span, ty = pad + Math.random() * span;
     if (opts.river && Math.abs(tx - px(MAPCFG.riverX)) < 18) continue;
-    if (opts.spots.some(p => Math.hypot(tx - px(p.x), ty - py(p.z)) < (p.type === 'tower' ? 34 : 20))) continue;
+    if (opts.spots.some(p => Math.hypot(tx - px(p.x), ty - py(p.z)) < (p.type === 'tower' ? 34 : p.type === 'pond' ? 28 : 20))) continue;
     g.beginPath();
     g.arc(tx, ty, 3 + Math.random() * 3, Math.PI, 0);
     g.stroke();
@@ -3327,6 +3380,166 @@ function foundPiece() {
   } else if (state.quest === 0) {
     state.quest = 1; // found a loose piece before searching the wreck
   }
+}
+
+/* ---------------- the log shed, halfway between cabin and crash ---------------- */
+const SHED_NOTE = { title: "The trapper's map", body:
+`Drew this the winter I cut the shed logs, so I would stop losing my own tracks in the snow.
+
+The cabin, the pond, the shed you are standing in, and the tower on the great hill. The dotted line is the walk I wore between them.
+
+Whatever else you find marked out there — I did not draw it.` };
+SHED_NOTE.img = makeRouteMap({
+  river: true,
+  spots: [
+    { x: CABIN.x, z: CABIN.z, type: 'cabin', label: 'the cabin' },
+    { x: POND.x, z: POND.z, type: 'pond', r: POND.r, label: 'the pond' },
+    { x: HILL.x, z: HILL.z, type: 'tower', label: 'the tower' },
+    { x: SHED.x, z: SHED.z, type: 'shed', label: 'my shed' },
+    { x: 0, z: 3, type: 'wreck', label: '' },
+  ],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: SHED.x, z: SHED.z }, { x: -1, z: 9 }],
+});
+function shedRot(px, pz) { // shed local -> world
+  const c = Math.cos(SHED_ROT), s = Math.sin(SHED_ROT);
+  return { x: SHED.x + px * c + pz * s, z: SHED.z - px * s + pz * c };
+}
+{
+  const sy = groundY(SHED.x, SHED.z);
+  const g = new THREE.Group();
+  g.position.set(SHED.x, sy, SHED.z);
+  g.rotation.y = SHED_ROT;
+  const logA = mat(0x5d4a30, { map: barkTex }), logB = mat(0x4e3d27, { map: barkTex }),
+        plankM = mat(0x6a5436, { map: barkTex }), iron = mat(0x3a352c, { shininess: 30 });
+  const W = 3.6, D = 2.9, R = 0.11;
+  // stacked-log walls, doorway on the crash-facing side
+  for (let r = 0; r < 10; r++) {
+    const ry = 0.15 + r * 0.23, rm = r % 2 ? logA : logB;
+    for (const s of [-1, 1]) {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(R, R, D + 0.3, 7), rm);
+      c.rotation.x = Math.PI / 2;
+      c.position.set(s * W / 2, ry, 0);
+      g.add(c);
+    }
+    const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, W + 0.3, 7), rm);
+    back.rotation.z = Math.PI / 2;
+    back.position.set(0, ry, -D / 2);
+    g.add(back);
+    if (ry > 1.95) { // header logs carry on over the doorway
+      const h = new THREE.Mesh(new THREE.CylinderGeometry(R, R, W + 0.3, 7), rm);
+      h.rotation.z = Math.PI / 2;
+      h.position.set(0, ry, D / 2);
+      g.add(h);
+    } else {
+      const segLen = W / 2 - 0.55;
+      for (const s of [-1, 1]) {
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(R, R, segLen, 7), rm);
+        c.rotation.z = Math.PI / 2;
+        c.position.set(s * (0.55 + segLen / 2), ry, D / 2);
+        g.add(c);
+      }
+    }
+  }
+  // door jambs, corner posts, a packed plank floor
+  for (const s of [-1, 1]) {
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.05, 0.26), plankM);
+    jamb.position.set(s * 0.62, 1.02, D / 2);
+    g.add(jamb);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 2.5, 7), logB);
+    post.position.set(sx * W / 2, 1.2, sz * D / 2);
+    g.add(post);
+  }
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.08, D - 0.2), mat(0x4a3a24, { map: barkTex }));
+  floor.position.y = 0.05;
+  g.add(floor);
+  // single-pitch roof, high over the door, battened in courses
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 0.9, 0.1, D + 1.2), plankM);
+  slab.position.set(0, 2.62, -0.1);
+  slab.rotation.x = -0.2;
+  g.add(slab);
+  for (const u of [-1.1, 0, 1.1]) {
+    const bat = new THREE.Mesh(new THREE.BoxGeometry(W + 0.9, 0.05, 0.14), logB);
+    bat.position.set(0, 2.68 + u * Math.sin(0.2), -0.1 + u * Math.cos(0.2));
+    g.add(bat);
+  }
+  // the box: a joined plank chest with iron straps, its lid thrown back
+  const chest = new THREE.Group();
+  chest.position.set(-0.85, 0.09, -0.65);
+  chest.rotation.y = 0.35;
+  for (let i = 0; i < 3; i++) {
+    const bm2 = i % 2 ? plankM : logA;
+    for (const s of [-1, 1]) {
+      const bd = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.17, 0.045), bm2);
+      bd.position.set(0, 0.1 + i * 0.18, s * 0.27);
+      chest.add(bd);
+    }
+    for (const s of [-1, 1]) {
+      const bd = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.17, 0.5), bm2);
+      bd.position.set(s * 0.42, 0.1 + i * 0.18, 0);
+      chest.add(bd);
+    }
+  }
+  const cbase = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.05, 0.56), logB);
+  cbase.position.y = 0.03;
+  chest.add(cbase);
+  for (const s of [-1, 1]) { // iron corner straps and a sprung hasp
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.6), iron);
+    strap.position.set(s * 0.36, 0.26, 0);
+    chest.add(strap);
+  }
+  const hasp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.04), iron);
+  hasp.position.set(0, 0.44, 0.3);
+  hasp.rotation.x = 0.5; // hanging open
+  chest.add(hasp);
+  // the lid, thrown back against the wall behind
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.58), plankM);
+  lid.position.set(0, 0.62, -0.48);
+  lid.rotation.x = -1.85;
+  chest.add(lid);
+  for (const s of [-1, 1]) {
+    const lstrap = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.58), iron);
+    lstrap.position.set(s * 0.36, 0.645, -0.505);
+    lstrap.rotation.x = -1.85;
+    chest.add(lstrap);
+  }
+  const cavity = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.02, 0.48), mat(0x17130d));
+  cavity.position.y = 0.3;
+  chest.add(cavity);
+  // the rolled map, leaning in the open box, tied with a cord
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.56, 8), mat(0xc9c0a2));
+  roll.position.set(0.08, 0.46, 0.02);
+  roll.rotation.set(0.25, 0.4, 1.15);
+  chest.add(roll);
+  const cord = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 4, 10), mat(0x4a3a26));
+  cord.position.set(0.08, 0.46, 0.02);
+  cord.rotation.set(0.25 + Math.PI / 2, 0.4, 1.15);
+  chest.add(cord);
+  g.add(chest);
+  // a few stacked spare logs against the outside wall
+  [[W / 2 + 0.35, 0.12, 0], [W / 2 + 0.57, 0.12, 0.25], [W / 2 + 0.46, 0.3, 0.1]].forEach(([lx, ly, lz], i) => {
+    const spare = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 2.2, 6), i % 2 ? logA : logB);
+    spare.rotation.x = Math.PI / 2;
+    spare.position.set(lx, ly, lz);
+    g.add(spare);
+  });
+  enableShadows(g);
+  scene.add(g);
+  addInteractable(roll, 'note', 'Take the map from the box', 'shed-map', { note: SHED_NOTE });
+  // wall collision, doorway open
+  const shedSegs = [
+    [-W / 2, -D / 2, W / 2, -D / 2],
+    [-W / 2, -D / 2, -W / 2, D / 2],
+    [W / 2, -D / 2, W / 2, D / 2],
+    [-W / 2, D / 2, -0.55, D / 2],
+    [0.55, D / 2, W / 2, D / 2],
+  ];
+  for (const s of shedSegs) {
+    const a = shedRot(s[0], s[1]), b = shedRot(s[2], s[3]);
+    wallSegs.push({ x1: a.x, z1: a.z, x2: b.x, z2: b.z, open: false });
+  }
+  addCollider(shedRot(-0.85, -0.65).x, shedRot(-0.85, -0.65).z, 0.5); // the chest blocks
 }
 
 /* cabin quest fixtures: locked door, back garden, the body, the letter */
@@ -5295,6 +5508,20 @@ const audio = (() => {
     src.connect(f).connect(g).connect(outTo(pan));
     src.start(ctx.currentTime + delay);
   }
+  // a soft pitched thump — the weight of a footfall rather than its texture
+  function thud(f0, dur, gain, delay = 0, pan = 0) {
+    if (!ctx) return;
+    const t0 = ctx.currentTime + delay;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(Math.max(28, f0 * 0.5), t0 + dur);
+    g.gain.setValueAtTime(gain, t0);
+    g.gain.exponentialRampToValueAtTime(0.0004, t0 + dur);
+    o.connect(g).connect(outTo(pan));
+    o.start(t0);
+    o.stop(t0 + dur + 0.03);
+  }
   return {
     init,
     tick() {
@@ -5486,8 +5713,23 @@ const audio = (() => {
     splash() { noiseBurst(0.15, 900, 1.5, 0.15); noiseBurst(0.1, 1600, 2, 0.08, 0.05); },
     hiss() { noiseBurst(0.35, 4200, 1.2, 0.06); },
     step(wet) {
-      if (wet) { noiseBurst(0.09, 700, 1, 0.2); noiseBurst(0.06, 1400, 1.5, 0.09, 0.03); }
-      else { noiseBurst(0.05, 800 + Math.random() * 700, 1.1, 0.09); noiseBurst(0.04, 420, 1, 0.05, 0.02); }
+      if (wet) {
+        // boot into shallow water: the body of the slosh, then spray falling back
+        const f = 480 + Math.random() * 240;
+        thud(90 + Math.random() * 20, 0.07, 0.09);
+        noiseBurst(0.1, f, 0.9, 0.15);
+        noiseBurst(0.13, f * 2.1, 1.3, 0.06, 0.045);
+        noiseBurst(0.05, 2400 + Math.random() * 900, 2.5, 0.025, 0.08 + Math.random() * 0.04);
+      } else {
+        // heel strike lands as weight, then the sole settles into the litter as
+        // a couple of distinct grains — never the same step twice
+        thud(66 + Math.random() * 28, 0.08, 0.1);
+        const base = 700 + Math.random() * 600;
+        noiseBurst(0.035, base, 1.6, 0.05, 0.004);
+        noiseBurst(0.03, base * (1.5 + Math.random() * 0.5), 2, 0.032, 0.02 + Math.random() * 0.02);
+        if (Math.random() < 0.3) // a dry twig or leaf now and then
+          noiseBurst(0.02, 2000 + Math.random() * 1400, 3, 0.018, 0.035 + Math.random() * 0.03);
+      }
     },
     stepEcho(pan = 0) { // a stride heavier than yours, half a beat behind it
       noiseBurst(0.06, 520 + Math.random() * 260, 1.1, 0.05, 0, pan);
