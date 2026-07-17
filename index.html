@@ -282,13 +282,35 @@
   #btn-food { right: calc(122px + env(safe-area-inset-right, 0px)); bottom: 148px; width: 52px; height: 52px; font-size: 10px; }
   #btn-inv  { right: calc(42px + env(safe-area-inset-right, 0px)); bottom: 26px; width: 46px; height: 46px; font-size: 10px; }
 
-  /* touch-mode HUD adjustments: free the corners the thumbs live in */
+  /* touch-mode HUD: smaller type, and every element gets its own corner —
+     objective top centre, meters top left, compass+clock top right, toasts
+     under the meters, prompt above the hotbar. Nothing overlaps. */
   html.touch #hint-keys { display: none; }
+  html.touch #meters { top: 10px; left: 10px; width: 140px; }
+  html.touch .meter { margin-bottom: 5px; }
+  html.touch .meter label { font-size: 8px; letter-spacing: 1px; }
+  html.touch .bar { height: 7px; }
+  html.touch #compass { width: 56px; height: 56px; top: 10px; right: 10px; }
+  html.touch #compass-dial span { font-size: 10px; }
+  html.touch #clock { top: 74px; right: 10px; font-size: 11px; letter-spacing: 1px; }
+  html.touch #clock .sub { font-size: 9px; margin-top: 2px; }
+  html.touch #objective {
+    top: 8px; bottom: auto;
+    font-size: 10px; line-height: 1.5; letter-spacing: .3px;
+    padding: 4px 12px; max-width: min(calc(100vw - 330px), 440px);
+  }
+  html.touch #toasts {
+    bottom: auto; top: 78px; right: auto; left: 10px;
+    text-align: left; font-size: 10px; line-height: 1.7; max-width: 34vw;
+  }
   html.touch #prompt b { display: none; }
-  html.touch #prompt { bottom: 26%; }
-  html.touch #toasts { bottom: auto; top: 108px; }
+  html.touch #prompt { bottom: 78px; font-size: 11px; letter-spacing: .5px; line-height: 1.5; max-width: 50vw; }
   html.touch .slot { width: 42px; height: 42px; }
   html.touch .panel { min-width: 0; width: min(560px, 88vw); max-height: 86vh; }
+  html.touch #note-overlay .paper { font-size: 12px; line-height: 1.6; padding: 16px 20px; }
+  html.touch #note-overlay .paper h3 { font-size: 11px; }
+  html.touch #note-date { font-size: 10px; margin-bottom: 10px; }
+  html.touch #inv-grid { font-size: 11px; }
 
   /* ---------- Rotate-to-landscape gate ---------- */
   #rotate {

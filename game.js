@@ -103,11 +103,12 @@ const BLIND = MAPCFG.blind;
 const HOLLOW = MAPCFG.hollow;   // where it sleeps
 const HILL = MAPCFG.hill;       // the great hill, and the watch tower on top
 const TOWER = { y: 0 };         // platform height, set when the tower is built
-/* the generator sits at the hill's foot, ~80m out on the approach — a power
-   line runs down from the tower straight to it */
+/* the generator sits below the hill's foot, ~95m out to the south-west — a
+   power line runs down from the tower straight to it. Kept well clear of the
+   river: the belt spot sits 13m river-side of it and must stay on dry land. */
 const GEN = (() => {
-  const dx = -169, dz = 142, d = Math.hypot(dx, dz); // toward the river bridge
-  return { x: Math.round(HILL.x + dx / d * 80), z: Math.round(HILL.z + dz / d * 80) };
+  const dx = -70, dz = 170, d = Math.hypot(dx, dz);
+  return { x: Math.round(HILL.x + dx / d * 95), z: Math.round(HILL.z + dz / d * 95) };
 })();
 const GEN_PARTS = ['Battery', 'Spark Plug', 'Drive Belt'];
 /* the bridge's missing plank washed up twenty metres shy of it, beside the path */
