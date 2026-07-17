@@ -242,11 +242,24 @@ const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 40
 camera.rotation.order = 'YXZ';
 scene.add(camera); // so the held-item view model can be a camera child
 
-addEventListener('resize', () => {
-  renderer.setSize(innerWidth * PIXEL_SCALE, innerHeight * PIXEL_SCALE, false);
-  camera.aspect = innerWidth / innerHeight;
+/* Keep the render buffer and camera aspect glued to the real viewport.
+   On phones a single resize event is not enough — rotation, fullscreen and
+   the browser bars collapsing all report their sizes late, and a stale
+   aspect squashes the world (doors shrink, the player seems tall). So this
+   is re-checked every frame; the equality test makes that free. */
+let vpW = 0, vpH = 0;
+function fitViewport() {
+  const w = innerWidth, h = innerHeight;
+  if (w === vpW && h === vpH) return;
+  vpW = w; vpH = h;
+  renderer.setSize(w * PIXEL_SCALE, h * PIXEL_SCALE, false);
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-});
+}
+addEventListener('resize', fitViewport);
+addEventListener('orientationchange', fitViewport);
+document.addEventListener('fullscreenchange', fitViewport);
+if (window.visualViewport) visualViewport.addEventListener('resize', fitViewport);
 
 const hemi = new THREE.HemisphereLight(0xcfd8c0, 0x2a3324, 0.9);
 scene.add(hemi);
@@ -651,7 +664,11 @@ function terrainHeight(x, z) {
   let h = baseHeight(x, z);
   h = lerp(h, 0.3, sstep(30, 12, Math.hypot(x, z)) * 0.9);              // crash clearing
   h = lerp(h, -1.6, sstep(RIVER_HALF + 4, 3, Math.abs(x - RIVER_X)));   // river bed
-  h = lerp(h, -1.6, sstep(POND.r + 4, 5, Math.hypot(x - POND.x, z - POND.z))); // pond
+  // the pond needs a shore that stands above its waterline (-0.55) wherever the
+  // map puts it — the ground swells into a low bank first, then drops into the bowl
+  const pd = Math.hypot(x - POND.x, z - POND.z);
+  h = lerp(h, 0.25, sstep(POND.r + 26, POND.r + 6, pd) * 0.95);
+  h = lerp(h, -1.6, sstep(POND.r + 4, 5, pd));
   h += 15 * sstep(62, 10, Math.hypot(x - HILL.x, z - HILL.z));          // the great hill
   // the banks dip to meet the footbridge
   const bApproach = sstep(6, 2, Math.abs(z - MAPCFG.bridgeZ)) * sstep(17, 13, Math.abs(x - MAPCFG.riverX));
@@ -6427,6 +6444,7 @@ function animateFires(now, dt) {
 let lastT = 0, bobT = 0, lastQuest = 0;
 function frame(now) {
   requestAnimationFrame(frame);
+  fitViewport(); // phones resize without telling anyone — see its comment
   const dt = Math.min((now - lastT) / 1000, 0.1);
   lastT = now;
   if (!state.running) {
