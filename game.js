@@ -146,7 +146,7 @@ const TRAIL_LEGS = [
   // cabin path's mouth, so the two can't be mistaken for each other
   { a: cabRot(-2, 8), b: { x: -232, z: 152 } },
   { a: { x: -232, z: 152 }, b: SHED },
-  { a: SHED, b: { x: 16, z: 10 } },
+  { a: SHED, b: { x: 7, z: 11 } }, // runs all the way in to the clearing's north edge
 ];
 function legNear(L, x, z, margin) {
   const dx = L.b.x - L.a.x, dz = L.b.z - L.a.z, len = Math.hypot(dx, dz);
@@ -1037,8 +1037,6 @@ function placeOK(x, z, clearCrash = true) {
   if (Math.hypot(x - SHED.x, z - SHED.z) < 9) return false; // the shed's clearing
   for (const k in PART_SPOTS)
     if (Math.hypot(x - PART_SPOTS[k].x, z - PART_SPOTS[k].z) < 2.6) return false;
-  for (const p of MAPCFG.pieces || [])
-    if (Math.hypot(x - p.x, z - p.z) < 2.6) return false; // the pages stay in the open
   for (const c of CACHES) if (Math.hypot(x - c.x, z - c.z) < 3) return false;
   if (Math.hypot(x - PLANK_SPOT.x, z - PLANK_SPOT.z) < 3) return false;
   for (const k of ['camp', 'snare', 'cairn'])
@@ -1090,7 +1088,6 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     if (nearWater(p.x, p.z)) continue;
     if (Math.hypot(p.x - FIRE.x, p.z - FIRE.z) < 8) continue;
     if (nearTrail(p.x, p.z, 2.8)) continue; // the stand parts where the path leaves the clearing
-    if ((MAPCFG.pieces || []).some(pp => Math.hypot(p.x - pp.x, p.z - pp.z) < 3)) continue; // and around the pages
     pines.push(p);
     treeData.push({ x: p.x, z: p.z, harvests: 3 });
   }
@@ -1771,14 +1768,19 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
   bc.rotation.set(0, 1.1, -0.12);
   enableShadows(bc);
   scene.add(bc);
-  addInteractable(bc, 'search', 'flight case', 'bcase', { luggage: true });
+  addInteractable(bc, 'search', 'flight case', 'bcase', { luggage: true, pieceIdx: 0 });
 
-  // thrown luggage — searchable salvage (E)
-  const caseM = mat(0x6e5136), caseM2 = mat(0x3f4a52);
+  // thrown luggage — seven bags in all; the flight case and four suitcases
+  // carry the notes (resolved by index at search time — MAP_PIECES is declared
+  // further down), two hold nothing but a stranger's clothes
+  const caseM = mat(0x6e5136), caseM2 = mat(0x3f4a52), caseM3 = mat(0x59452e);
   const luggage = [
-    { x: 3.4, z: 4.6, m: caseM, give: { Rations: 1 } },
-    { x: -2.2, z: 3.4, m: caseM2, give: { Rations: 1, Berries: 2 } },
-    { x: 5.8, z: -1.6, m: caseM, give: { Rations: 1 } },
+    { x: 3.4, z: 4.6, m: caseM, pieceIdx: 1 },
+    { x: -2.2, z: 3.4, m: caseM2, pieceIdx: 2 },
+    { x: 5.8, z: -1.6, m: caseM, pieceIdx: 3 },
+    { x: -4.8, z: -1.5, m: caseM3, pieceIdx: 4 },
+    { x: 0.5, z: -4.6, m: caseM2 },
+    { x: 6.6, z: 3.8, m: caseM3 },
   ];
   for (const L of luggage) {
     const c = new THREE.Group();
@@ -1792,7 +1794,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     c.rotation.y = rng() * 3;
     c.rotation.z = rng() * 0.4 - 0.2;
     scene.add(c);
-    addInteractable(c, 'search', 'suitcase', 'case', { luggage: true });
+    addInteractable(c, 'search', 'suitcase', 'case', { luggage: true, pieceIdx: L.pieceIdx });
   }
 }
 
@@ -3385,25 +3387,8 @@ BLIND_NOTE.img = makeRouteMap({
   scene.add(bm);
   addInteractable(bm, 'note', 'Read the marked map', 'blind-map', { note: BLIND_NOTE });
 }
-MAPCFG.pieces.slice(0, 4).forEach((p, i) => { MAP_PIECES[i + 1].x = p.x; MAP_PIECES[i + 1].z = p.z; });
-for (let i = 1; i < MAP_PIECES.length; i++) {
-  const n = MAP_PIECES[i];
-  const gy = groundY(n.x, n.z);
-  // each page sits propped against a fist of stone at the clearing's edge,
-  // pale and upright and facing the wreck, instead of flat where the grass hides it
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.17, 0), mat(0x83837c));
-  rock.position.set(n.x - Math.sign(n.x || 1) * 0.14, gy + 0.1, n.z - Math.sign(n.z || 1) * 0.14);
-  rock.rotation.set(rng() * 3, rng() * 3, rng() * 3);
-  scene.add(rock);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.75), paperM);
-  m.rotation.order = 'YXZ';
-  m.position.set(n.x, gy + 0.3, n.z);
-  m.rotation.y = Math.atan2(-n.x, -n.z); // turned toward the crash
-  m.rotation.x = -0.5;                   // leaning back against its stone
-  m.rotation.z = (rng() - 0.5) * 0.4;
-  scene.add(m);
-  addInteractable(m, 'note', 'Read the page', 'piece' + i, { note: n, onRead: foundPiece });
-}
+/* the notes all travel in the luggage now — five of the seven bags at the
+   wreck carry them (assigned by pieceIdx where the bags are built) */
 function foundPiece() {
   state.pieces++;
   $('note-count').textContent = `Notes found: ${state.pieces} / 5`;
@@ -3431,7 +3416,7 @@ SHED_NOTE.img = makeRouteMap({
     { x: SHED.x, z: SHED.z, type: 'shed', label: 'my shed' },
     { x: 0, z: 3, type: 'wreck', label: '' },
   ],
-  route: [{ x: CABIN.x, z: CABIN.z }, { x: -232, z: 152 }, { x: SHED.x, z: SHED.z }, { x: 16, z: 10 }],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: -232, z: 152 }, { x: SHED.x, z: SHED.z }, { x: 7, z: 11 }],
 });
 function shedRot(px, pz) { // shed local -> world
   const c = Math.cos(SHED_ROT), s = Math.sin(SHED_ROT);
@@ -4648,20 +4633,26 @@ function onQuestChange(q) {
 }
 
 /* quest interactions, checked before everything else */
-/* the first bag you open — whichever it is — holds the flashlight and the map */
-function searchLuggage() {
+/* the first bag you open — whichever it is — holds the flashlight; five of the
+   seven bags hold the notes, and two were packed by someone with nothing to say */
+function searchLuggage(data) {
+  let gotSomething = false;
   if (!state.gotKit) {
     state.gotKit = true;
     if (state.quest === 0) state.quest = 1;
-    foundPiece(); // the map counts as the first note
     give({ Flashlight: 1 });
     state.held = 'Flashlight';
     rebuildHeld();
     updateInvHUD();
     toast('+ Flashlight — it still works');
-    openNote(MAP_PIECES[0]);
     audio.blip();
-  } else {
+    gotSomething = true;
+  }
+  if (data && data.pieceIdx != null) {
+    openNote(MAP_PIECES[data.pieceIdx]);
+    foundPiece();
+    audio.blip();
+  } else if (!gotSomething) {
     toast('Clothes, papers — a life packed for somewhere else. Nothing you can use.');
   }
 }
@@ -6288,7 +6279,7 @@ function findAction() {
       setTimeout(() => {
         if (state.dead || state.ended) return;
         removeInteractable(best);
-        if (best.data.luggage) searchLuggage();
+        if (best.data.luggage) searchLuggage(best.data);
         else if (best.data.give) {
           give(best.data.give);
           audio.blip();
@@ -6634,20 +6625,8 @@ function objectiveText() {
   const dist = p => Math.round(Math.hypot(state.pos.x - p.x, state.pos.z - p.z)) + 'm';
   let txt;
   switch (state.quest) {
-    case 0: txt = 'Search the luggage scattered around the wreck.'; break;
-    case 1: {
-      txt = `Find the other notes — ${state.pieces}/5.`;
-      let near = null, nd = 1e9; // point the way to the closest unread page
-      for (let i = 1; i < MAP_PIECES.length; i++) {
-        const n = MAP_PIECES[i];
-        if (state.notesRead.includes(n)) continue;
-        const d = Math.hypot(state.pos.x - n.x, state.pos.z - n.z);
-        if (d < nd) { nd = d; near = n; }
-      }
-      if (near) txt += ` A pale page lies ${compassWord(near, state.pos)} of you (${Math.round(nd)}m).`;
-      else txt += ' The last is packed away in the luggage at the wreck.';
-      break;
-    }
+    case 0: txt = 'Search the luggage for the notes.'; break;
+    case 1: txt = `Search the luggage for the notes — ${state.pieces}/5.`; break;
     case 2: txt = `Follow the path to the cabin, ${compassWord(CABIN)} (${dist(CABIN)}).`; break;
     case 3: txt = 'The cabin is locked. One pale stone by the porch sits wrong — look under it.'; break;
     case 4: txt = 'Unlock the cabin door with the key.'; break;
