@@ -140,10 +140,12 @@ const TRAIL_LEGS = [
   { a: { x: 6, z: 1 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },      // crash -> the bridge
   { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ },                           // over the river -> the hill
     b: { x: HILL.x - 10, z: HILL.z + 9 } },
-  // the trapper's round: cabin -> the shed -> back to the crash clearing.
-  // The shed spur re-enters the clearing on its north-east side, well away
-  // from the cabin path's mouth, so the two can't be mistaken for each other
-  { a: cabRot(2.5, 5.5), b: SHED },
+  // the trapper's round: the cabin path carries on PAST the cabin, swings
+  // around behind it, and comes back east to the shed; from the shed a spur
+  // re-enters the crash clearing on its north-east side, well away from the
+  // cabin path's mouth, so the two can't be mistaken for each other
+  { a: cabRot(-2, 8), b: { x: -232, z: 152 } },
+  { a: { x: -232, z: 152 }, b: SHED },
   { a: SHED, b: { x: 16, z: 10 } },
 ];
 function legNear(L, x, z, margin) {
@@ -3416,7 +3418,7 @@ SHED_NOTE.img = makeRouteMap({
     { x: SHED.x, z: SHED.z, type: 'shed', label: 'my shed' },
     { x: 0, z: 3, type: 'wreck', label: '' },
   ],
-  route: [{ x: CABIN.x, z: CABIN.z }, { x: SHED.x, z: SHED.z }, { x: 16, z: 10 }],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: -232, z: 152 }, { x: SHED.x, z: SHED.z }, { x: 16, z: 10 }],
 });
 function shedRot(px, pz) { // shed local -> world
   const c = Math.cos(SHED_ROT), s = Math.sin(SHED_ROT);
@@ -5656,21 +5658,21 @@ const audio = (() => {
         noiseBurst(0.3, 48, 0.6, v * 0.9, d + 0.02); // the weight landing under each stride
       }
     },
-    rattle() { // a hand on the knob: a slow try, another, then a frustrated shake
+    rattle() { // a hand on the knob: a slow try, a slower one, then a weary shake
       // first try — the knob turns a little and meets the bolt, dead
-      noiseBurst(0.03, 900, 4, 0.09, 0);        // the grip settling
-      noiseBurst(0.06, 1450, 6, 0.13, 0.12);    // the mechanism taking up its slack
-      noiseBurst(0.045, 470, 3, 0.16, 0.26);    // stopped hard against the lock
-      // second, slower try, as if the first might have been a mistake
-      noiseBurst(0.03, 840, 4, 0.08, 0.8);
-      noiseBurst(0.07, 1380, 6, 0.12, 0.95);
-      noiseBurst(0.045, 450, 3, 0.15, 1.12);
-      // then the shake — loose metal chattering in the old door
-      for (let i = 0; i < 7; i++) {
-        noiseBurst(0.02, 1900 + Math.random() * 700, 5, 0.09, 1.55 + i * 0.07);
-        noiseBurst(0.025, 620, 2.5, 0.07, 1.57 + i * 0.07);
+      noiseBurst(0.04, 900, 4, 0.09, 0);        // the grip settling
+      noiseBurst(0.09, 1450, 6, 0.13, 0.3);     // the mechanism taking up its slack
+      noiseBurst(0.06, 470, 3, 0.16, 0.6);      // stopped hard against the lock
+      // second try, slower still, as if the first might have been a mistake
+      noiseBurst(0.04, 840, 4, 0.08, 1.6);
+      noiseBurst(0.1, 1380, 6, 0.12, 1.9);
+      noiseBurst(0.06, 450, 3, 0.15, 2.25);
+      // then the shake — loose metal knocking in the old door, unhurried
+      for (let i = 0; i < 5; i++) {
+        noiseBurst(0.025, 1900 + Math.random() * 700, 5, 0.09, 3.0 + i * 0.17);
+        noiseBurst(0.03, 620, 2.5, 0.07, 3.03 + i * 0.17);
       }
-      noiseBurst(0.05, 380, 2, 0.11, 2.15); // and the knob clunks back to rest
+      noiseBurst(0.06, 380, 2, 0.11, 4.0); // and the knob clunks back to rest
     },
     doorCreak() { // two seconds of dry hinges: a squeal that sticks, slips, and wanders
       if (!ctx) return;
@@ -6459,8 +6461,20 @@ if (IS_TOUCH) {
   document.querySelector('#note-overlay .close-hint').textContent = 'tap anywhere to put it down';
 }
 
-// notes say "press any key" — a click or tap anywhere counts too
-$('note-overlay').addEventListener('pointerdown', () => { if (state.overlayOpen === 'note') closeOverlays(); });
+// notes say "press any key" — a click or tap anywhere counts too, but a DRAG
+// must scroll the note (long ones carry a map below the fold), not put it down
+{
+  const ov = $('note-overlay');
+  let down = null;
+  ov.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+  ov.addEventListener('pointerup', e => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    down = null;
+    if (moved < 8 && state.overlayOpen === 'note') closeOverlays();
+  });
+  ov.addEventListener('pointercancel', () => { down = null; });
+}
 
 /* ---------------- night event scheduling ---------------- */
 function scheduleNight(n) {
@@ -6950,8 +6964,13 @@ function frame(now) {
     camera.position.x += (Math.random() - 0.5) * 0.055 * k;
     camera.position.y += (Math.random() - 0.5) * 0.045 * k;
   }
+  // hold a constant HORIZONTAL field of view (~102°) and derive the vertical
+  // from the aspect: with a fixed vertical FOV, very wide phone screens got a
+  // fisheye that dwarfed everything nearby — doors looked knee-high.
+  // (tan(102.5°/2) = 1.246; at a 16:9 desktop this lands on the old 70°.)
+  const baseFov = clamp(2 * Math.atan(1.246 / camera.aspect) * 180 / Math.PI, 52, 80);
   // sprint widens the view a touch
-  const fovTarget = state.sprinting && state.moving && state.stamina > 0 ? 77 : 70;
+  const fovTarget = state.sprinting && state.moving && state.stamina > 0 ? baseFov + 7 : baseFov;
   if (Math.abs(camera.fov - fovTarget) > 0.05) {
     camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 6);
     camera.updateProjectionMatrix();
