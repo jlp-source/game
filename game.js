@@ -242,11 +242,19 @@ function nightNumber() {
 /* ---------------- renderer / scene ---------------- */
 const canvas = $('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-const ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy()); // crisp ground/bark at grazing angles
-renderer.setSize(innerWidth * PIXEL_SCALE, innerHeight * PIXEL_SCALE, false);
-// no shadow pass: under the endless night the sun is a rumor, and re-rendering
-// every mesh into a 2k shadow map each frame was most of the frame cost
-renderer.shadowMap.enabled = false;
+const COARSE = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+/* render at the device's real resolution (capped) — CSS-pixel rendering left
+   high-DPI phones and laptops with a quarter of their pixels */
+const DPR = Math.min(window.devicePixelRatio || 1, COARSE ? 1.75 : 2);
+const ANISO = Math.min(16, renderer.capabilities.getMaxAnisotropy()); // crisp ground/bark at grazing angles
+renderer.setSize(innerWidth * PIXEL_SCALE * DPR, innerHeight * PIXEL_SCALE * DPR, false);
+/* cast shadows are back — but the map re-renders on a slow cadence in the
+   frame loop (the sun only crawls), not every frame, so the old cost doesn't
+   return with them; weak GPUs shed them automatically if the frame rate sags */
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;
+renderer.shadowMap.needsUpdate = true;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -269,7 +277,7 @@ function fitViewport() {
   const w = innerWidth, h = innerHeight;
   if (w === vpW && h === vpH) return;
   vpW = w; vpH = h;
-  renderer.setSize(w * PIXEL_SCALE, h * PIXEL_SCALE, false);
+  renderer.setSize(w * PIXEL_SCALE * DPR, h * PIXEL_SCALE * DPR, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -283,7 +291,7 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffeecc, 0.9);
 sun.position.set(60, 80, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(COARSE ? 1536 : 2048, COARSE ? 1536 : 2048);
 sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
 sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
 sun.shadow.camera.near = 20; sun.shadow.camera.far = 220;
@@ -817,8 +825,8 @@ let waterObj = null, waterGeoRef = null;
       t.anisotropy = ANISO;
     });
     waterObj = new THREE.Water(merged, {
-      textureWidth: 256,      // soft, murky reflections — not a mirror
-      textureHeight: 256,
+      textureWidth: COARSE ? 256 : 512,  // soft, murky reflections — not a mirror
+      textureHeight: COARSE ? 256 : 512,
       waterNormals: normals,
       sunDirection: new THREE.Vector3(0.4, 0.8, 0.2),
       sunColor: 0xaab0a4,
@@ -1108,6 +1116,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
   addWind(pCan2.material, 0.12, 1.15, true);
   addWind(pCan3.material, 0.15, 1.3, true);
   addWind(pCan4.material, 0.18, 1.45, true);
+  for (const m of [pTrunk, pCan1, pCan2, pCan3, pCan4]) m.castShadow = true;
   pines.forEach((p, i) => {
     const y = groundY(p.x, p.z);
     const s = 0.75 + rng() * 0.85, sy = s * (1 + rng() * 0.45), ry = rng() * Math.PI * 2;
@@ -1138,6 +1147,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
   addWind(bCan.material, 0.11, 0.85);
   addWind(bCan2.material, 0.13, 1.0);
   addWind(bCan3.material, 0.14, 1.1);
+  for (const m of [bTrunk, bCan, bCan2, bCan3]) m.castShadow = true;
   broads.forEach((p, i) => {
     const y = groundY(p.x, p.z);
     const s = 0.7 + rng() * 0.7, ry = rng() * Math.PI * 2;
@@ -1174,6 +1184,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
         0, ba, 1 + rng() * 0.4, s, s, s, dGrey);
     }
   });
+  dTrunk.castShadow = dBranch.castShadow = true;
 
   /* undergrowth: ferns, grass, rocks, fallen logs, stumps */
   const NF = Math.round(620 * DENS);
@@ -6391,7 +6402,7 @@ canvas.addEventListener('pointercancel', lookEnd);
 /* left thumb: analog joystick (push past the ring to sprint); right side of
    the screen drags the camera; USE mirrors E and lights up when something is
    in reach; JUMP / EAT / BAG mirror Space / F / I. */
-const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+const IS_TOUCH = COARSE;
 const joy = { x: 0, y: 0, len: 0 };
 
 /* fullscreen + landscape, best-effort across browsers. The orientation lock
@@ -6753,7 +6764,7 @@ function animateFires(now, dt) {
   if (window._planeFire)
     window._planeFire.light.intensity = 0.7 + Math.sin(now * 0.02) * 0.15 + Math.random() * 0.2;
 }
-let lastT = 0, bobT = 0, lastQuest = 0;
+let lastT = 0, bobT = 0, lastQuest = 0, shadowT = 9, perfAvg = 0.016;
 function frame(now) {
   requestAnimationFrame(frame);
   fitViewport(); // phones resize without telling anyone — see its comment
@@ -7020,6 +7031,18 @@ function frame(now) {
   updateLighting();
   updateClouds(dt);
   updateFireflies(now, 1 - daylight());
+  // the shadow map re-renders every ~0.4s — the sun crawls, nobody notices —
+  // and if a weak GPU is struggling after the first grace period, shadows go
+  shadowT += dt;
+  if (shadowT > 0.4 && sun.castShadow && sun.intensity > 0.1) {
+    shadowT = 0;
+    renderer.shadowMap.needsUpdate = true;
+  }
+  perfAvg += (dt - perfAvg) * 0.03;
+  if (perfAvg > 0.055 && state.playSec > 10 && sun.castShadow) {
+    sun.castShadow = false;
+    renderer.shadowMap.needsUpdate = true;
+  }
   renderer.render(scene, camera);
 }
 
