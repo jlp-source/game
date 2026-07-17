@@ -140,9 +140,11 @@ const TRAIL_LEGS = [
   { a: { x: 6, z: 1 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },      // crash -> the bridge
   { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ },                           // over the river -> the hill
     b: { x: HILL.x - 10, z: HILL.z + 9 } },
-  // the trapper's round: cabin -> the shed -> back to the crash clearing
+  // the trapper's round: cabin -> the shed -> back to the crash clearing.
+  // The shed spur re-enters the clearing on its north-east side, well away
+  // from the cabin path's mouth, so the two can't be mistaken for each other
   { a: cabRot(2.5, 5.5), b: SHED },
-  { a: SHED, b: { x: -1, z: 9 } },
+  { a: SHED, b: { x: 16, z: 10 } },
 ];
 function legNear(L, x, z, margin) {
   const dx = L.b.x - L.a.x, dz = L.b.z - L.a.z, len = Math.hypot(dx, dz);
@@ -3414,7 +3416,7 @@ SHED_NOTE.img = makeRouteMap({
     { x: SHED.x, z: SHED.z, type: 'shed', label: 'my shed' },
     { x: 0, z: 3, type: 'wreck', label: '' },
   ],
-  route: [{ x: CABIN.x, z: CABIN.z }, { x: SHED.x, z: SHED.z }, { x: -1, z: 9 }],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: SHED.x, z: SHED.z }, { x: 16, z: 10 }],
 });
 function shedRot(px, pz) { // shed local -> world
   const c = Math.cos(SHED_ROT), s = Math.sin(SHED_ROT);
