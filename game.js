@@ -6078,8 +6078,27 @@ canvas.addEventListener('pointercancel', lookEnd);
    in reach; JUMP / EAT / BAG mirror Space / F / I. */
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const joy = { x: 0, y: 0, len: 0 };
+
+/* fullscreen + landscape, best-effort across browsers. The orientation lock
+   matters even when the phone's rotation lock is on — a programmatic lock
+   overrides it on Android; iOS supports neither (home-screen install instead). */
+function goFullscreen() {
+  try {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    const lock = () => {
+      try {
+        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+      } catch (err) {}
+    };
+    const p = req && req.call(el, { navigationUI: 'hide' });
+    if (p && p.then) p.then(lock).catch(() => lock()); else lock();
+  } catch (err) { /* stay windowed */ }
+}
+
 if (IS_TOUCH) {
   document.documentElement.classList.add('touch');
+  $('btn-fullscreen').addEventListener('click', goFullscreen);
 
   const zone = $('joy-zone'), base = $('joy-base'), thumb = $('joy-thumb');
   const R = 46; // max thumb travel in px
@@ -6126,12 +6145,13 @@ if (IS_TOUCH) {
   bindBtn('btn-food', 'f');
   bindBtn('btn-inv', 'i');
 
-  // notes say "press any key" — a tap counts
-  $('note-overlay').addEventListener('pointerdown', () => { if (state.overlayOpen === 'note') closeOverlays(); });
-
   document.querySelector('#start .keys').innerHTML =
     'left stick — move (push hard to sprint)<br>drag the view to look · USE — interact';
+  document.querySelector('#note-overlay .close-hint').textContent = 'tap anywhere to put it down';
 }
+
+// notes say "press any key" — a click or tap anywhere counts too
+$('note-overlay').addEventListener('pointerdown', () => { if (state.overlayOpen === 'note') closeOverlays(); });
 
 /* ---------------- night event scheduling ---------------- */
 function scheduleNight(n) {
@@ -6670,13 +6690,7 @@ function frame(now) {
 /* ---------------- start ---------------- */
 $('btn-start').addEventListener('click', () => {
   audio.init();
-  // phones: go fullscreen and hold landscape (best-effort — iOS has neither)
-  if (IS_TOUCH) {
-    try {
-      const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-      if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => {});
-    } catch (err) { /* stay windowed; the rotate gate still nudges landscape */ }
-  }
+  if (IS_TOUCH) goFullscreen(); // phones: fullscreen + hold landscape
   $('start').style.display = 'none';
   // three seconds of black, and a date typed onto it — then the woods
   const card = document.createElement('div');
