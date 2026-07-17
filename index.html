@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>The Quiet Wood</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: "Courier New", monospace; color: #cfd6c3; user-select: none; }
+
+  canvas#game {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  canvas#game.dragging { cursor: grabbing; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+
+  #meters { position: absolute; top: 16px; left: 16px; width: 220px; }
+  .meter { margin-bottom: 8px; }
+  .meter label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: .85; text-shadow: 0 1px 2px #000; }
+  .bar {
+    height: 10px; margin-top: 2px;
+    background: rgba(0,0,0,.55);
+    border: 1px solid rgba(210,220,195,.4);
+  }
+  .bar > div { height: 100%; width: 100%; transition: width .3s linear; }
+  #bar-health > div { background: #a8403a; }
+  #bar-stamina > div { background: #6f9e5f; transition: width .1s linear; }
+
+  #clock {
+    position: absolute; top: 112px; right: 16px; text-align: right;
+    font-size: 15px; letter-spacing: 2px; text-shadow: 0 1px 3px #000;
+  }
+  #clock .sub { font-size: 11px; opacity: .7; margin-top: 3px; }
+
+  /* ---------- Compass ---------- */
+  #compass {
+    position: absolute; top: 16px; right: 16px;
+    width: 78px; height: 78px;
+  }
+  #compass-dial {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: rgba(10, 14, 10, .6);
+    border: 2px solid rgba(210, 220, 195, .4);
+    box-shadow: inset 0 0 14px rgba(0,0,0,.6);
+  }
+  #compass-dial span {
+    position: absolute; font-size: 13px; font-weight: bold;
+    color: #cfd6c3; text-shadow: 0 1px 2px #000;
+    width: 14px; text-align: center;
+  }
+  #compass-dial .cn { top: 4px; left: 50%; margin-left: -7px; color: #d97a6a; }
+  #compass-dial .cs { bottom: 4px; left: 50%; margin-left: -7px; }
+  #compass-dial .ce { right: 5px; top: 50%; margin-top: -9px; }
+  #compass-dial .cw { left: 5px; top: 50%; margin-top: -9px; }
+  #compass-caret {
+    position: absolute; top: -3px; left: 50%; margin-left: -5px;
+    border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-top: 8px solid #e8e2c8;
+    filter: drop-shadow(0 1px 1px #000);
+  }
+
+  /* ---------- Objective banner (above hotbar) ---------- */
+  #objective {
+    position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%);
+    max-width: 72vw; text-align: center;
+    font-size: 14px; line-height: 1.6; letter-spacing: .5px;
+    color: #e6ecd2; text-shadow: 0 1px 3px #000;
+    background: rgba(10, 14, 10, .55);
+    border: 1px solid rgba(210, 220, 195, .25);
+    padding: 6px 18px;
+  }
+
+  /* ---------- Hotbar (Minecraft-style) ---------- */
+  #hotbar {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 4px; pointer-events: auto;
+  }
+  .slot {
+    width: 48px; height: 48px; position: relative;
+    background: rgba(10, 14, 10, .72);
+    border: 2px solid rgba(210, 220, 195, .38);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .slot.empty { opacity: .4; }
+  .slot:not(.empty) { cursor: pointer; }
+  .slot:not(.empty):hover { border-color: rgba(232,226,200,.75); }
+  .slot .swatch {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold; color: #f0f0e8; text-shadow: 0 1px 1px #000;
+    box-shadow: inset 0 -4px rgba(0,0,0,.3), inset 0 2px rgba(255,255,255,.12);
+  }
+  .slot img.icon, .inv-item img.icon { width: 32px; height: 32px; image-rendering: pixelated; }
+  .inv-item img.icon { width: 24px; height: 24px; flex: none; }
+  .slot .cnt {
+    position: absolute; right: 3px; bottom: 1px;
+    font-size: 11px; font-weight: bold; text-shadow: 0 1px 2px #000;
+  }
+  .slot.more { font-size: 10px; text-align: center; opacity: .8; }
+  .slot.sel { border-color: #e8e2c8; box-shadow: 0 0 8px rgba(232,226,200,.45); }
+  .slot .num { position: absolute; left: 3px; top: 1px; font-size: 9px; opacity: .5; }
+  .inv-item { cursor: pointer; pointer-events: auto; padding: 2px 4px; border: 1px solid transparent; }
+  .inv-item:hover { background: rgba(110,130,95,.25); }
+  .inv-item.sel { border-color: rgba(232,226,200,.6); }
+
+  /* ---------- Inventory panel (I) ---------- */
+  #inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .inv-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .inv-item .swatch {
+    width: 22px; height: 22px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: bold; color: #f0f0e8; text-shadow: 0 1px 1px #000;
+    box-shadow: inset 0 -3px rgba(0,0,0,.3);
+  }
+  .inv-item em { font-style: normal; font-size: 10px; opacity: .5; }
+
+  #prompt {
+    position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%);
+    font-size: 14px; letter-spacing: 1px; text-align: center;
+    text-shadow: 0 1px 3px #000; line-height: 1.7;
+  }
+  #prompt b {
+    display: inline-block; border: 1px solid #cfd6c3; padding: 0 6px;
+    margin-right: 6px; font-size: 12px; background: rgba(0,0,0,.5);
+  }
+
+  #toasts {
+    position: absolute; right: 16px; bottom: 16px; text-align: right;
+    font-size: 12px; line-height: 1.8;
+  }
+  .toast { text-shadow: 0 1px 2px #000; opacity: 1; transition: opacity 1s; }
+  .toast.fading { opacity: 0; }
+
+  #hint-keys {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: 1px; opacity: .45; text-shadow: 0 1px 2px #000;
+  }
+
+  /* ---------- Overlays (shared) ---------- */
+  .panel {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    background: rgba(10, 14, 10, .93);
+    border: 1px solid rgba(210,220,195,.35);
+    padding: 22px 28px;
+    min-width: 420px; max-width: 620px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 0 60px rgba(0,0,0,.9);
+  }
+  .panel h2 { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 14px; opacity: .9; }
+  [hidden] { display: none !important; }
+
+  .panel .foot { margin-top: 12px; font-size: 11px; opacity: .6; }
+
+  /* ---------- Hurt flash ---------- */
+  #hurt {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(120,10,10,.2) 35%, rgba(140,0,0,.65) 100%);
+    transition: opacity .6s;
+  }
+
+  /* ---------- Notes ---------- */
+  #note-overlay .paper {
+    font-family: Georgia, "Times New Roman", serif;
+    background: #d8d2bd; color: #2c2820;
+    padding: 30px 34px; line-height: 1.7; font-size: 15px;
+    box-shadow: inset 0 0 60px rgba(90,80,55,.5);
+    white-space: pre-wrap;
+  }
+  #note-overlay .paper h3 {
+    font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 6px; border-bottom: 1px solid rgba(44,40,32,.4); padding-bottom: 8px;
+  }
+  #note-date {
+    font-size: 12px; font-style: italic; opacity: .65; margin-bottom: 14px;
+  }
+  #note-overlay .close-hint { margin-top: 14px; font-size: 11px; opacity: .6; text-align: center; font-family: "Courier New", monospace; color: #cfd6c3; }
+  #note-img {
+    display: block; max-width: 100%; margin: 16px auto 0;
+    transform: rotate(-1.2deg);
+    filter: drop-shadow(2px 3px 4px rgba(40,30,15,.35)) sepia(.15) contrast(.95);
+  }
+
+  /* ---------- Screen FX ---------- */
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 33%, rgba(5,3,8,.96) 100%);
+    transition: opacity 1.5s;
+  }
+  #fade {
+    position: fixed; inset: 0; background: #000; pointer-events: none;
+    opacity: 0; transition: opacity 6s ease-in;
+  }
+  #grain {
+    position: fixed; inset: -60px; pointer-events: none;
+    opacity: .22; z-index: 5;
+    animation: grainshift .45s steps(3) infinite;
+  }
+  @keyframes grainshift {
+    0% { transform: translate(0, 0); }
+    33% { transform: translate(-28px, 14px); }
+    66% { transform: translate(18px, -22px); }
+    100% { transform: translate(0, 0); }
+  }
+
+  /* ---------- Start / Ending ---------- */
+  #start, #ending, #death {
+    position: fixed; inset: 0; background: #050705;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; z-index: 30;
+  }
+  /* the title sits over the live scene: the burning wreck and the fire behind the text */
+  #start {
+    background: radial-gradient(ellipse at center, rgba(4,6,5,.3) 0%, rgba(4,6,5,.7) 60%, rgba(4,6,5,.95) 100%);
+  }
+  #start h1, #start p, #start .keys { text-shadow: 0 1px 8px rgba(0,0,0,.95), 0 0 2px rgba(0,0,0,.9); }
+  #start h1, #ending h1, #death h1 {
+    font-size: 34px; letter-spacing: 12px; font-weight: normal;
+    color: #b9c2a8; margin-bottom: 18px; text-transform: uppercase;
+  }
+  #death h1 { color: #9c5a52; }
+  #start p, #ending p, #death p { font-size: 13px; line-height: 2; opacity: .8; max-width: 520px; }
+  #start .keys { margin: 22px 0; font-size: 12px; line-height: 2.1; opacity: .7; }
+  #start button {
+    margin-top: 10px; padding: 10px 34px; font-family: inherit; font-size: 13px;
+    letter-spacing: 3px; text-transform: uppercase; cursor: pointer;
+    background: none; color: #cfd6c3; border: 1px solid #cfd6c3;
+  }
+  #start button:hover { background: rgba(207,214,195,.12); }
+  #ending, #death { opacity: 0; transition: opacity 4s; }
+  #death { transition: opacity 2s; }
+  #ending.shown, #death.shown { opacity: 1; }
+  #ending .final, #death .final { margin-top: 26px; font-size: 11px; opacity: .5; }
+
+  /* ---------- Touch controls (mobile) ---------- */
+  #touch-ui { display: none; }
+  html.touch #touch-ui { display: block; }
+  #joy-zone {
+    position: fixed; left: 0; bottom: 0;
+    width: 42vw; height: 65vh;
+    touch-action: none;
+  }
+  #joy-base {
+    position: absolute; left: calc(30px + env(safe-area-inset-left, 0px)); bottom: 30px;
+    width: 116px; height: 116px; border-radius: 50%;
+    background: rgba(10,14,10,.45);
+    border: 2px solid rgba(210,220,195,.35);
+    box-shadow: inset 0 0 18px rgba(0,0,0,.5);
+  }
+  #joy-thumb {
+    position: absolute; left: 50%; top: 50%; margin: -26px 0 0 -26px;
+    width: 52px; height: 52px; border-radius: 50%;
+    background: rgba(207,214,195,.3);
+    border: 2px solid rgba(210,220,195,.55);
+  }
+  .tbtn {
+    position: fixed; border-radius: 50%;
+    background: rgba(10,14,10,.55);
+    border: 2px solid rgba(210,220,195,.45);
+    color: #cfd6c3; font-family: inherit; font-size: 11px; letter-spacing: 1px;
+    text-shadow: 0 1px 2px #000;
+    touch-action: none; padding: 0;
+  }
+  .tbtn:active { background: rgba(110,130,95,.4); }
+  .tbtn.dim { opacity: .35; }
+  #btn-use  { right: calc(28px + env(safe-area-inset-right, 0px)); bottom: 104px; width: 74px; height: 74px; font-size: 13px; }
+  #btn-jump { right: calc(114px + env(safe-area-inset-right, 0px)); bottom: 36px; width: 58px; height: 58px; }
+  #btn-food { right: calc(122px + env(safe-area-inset-right, 0px)); bottom: 148px; width: 52px; height: 52px; font-size: 10px; }
+  #btn-inv  { right: calc(42px + env(safe-area-inset-right, 0px)); bottom: 26px; width: 46px; height: 46px; font-size: 10px; }
+
+  /* touch-mode HUD adjustments: free the corners the thumbs live in */
+  html.touch #hint-keys { display: none; }
+  html.touch #prompt b { display: none; }
+  html.touch #prompt { bottom: 26%; }
+  html.touch #toasts { bottom: auto; top: 108px; }
+  html.touch .slot { width: 42px; height: 42px; }
+  html.touch .panel { min-width: 0; width: min(560px, 88vw); max-height: 86vh; }
+
+  /* ---------- Rotate-to-landscape gate ---------- */
+  #rotate {
+    position: fixed; inset: 0; z-index: 90; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: #050705; color: #b9c2a8; text-align: center;
+    font-size: 14px; letter-spacing: 2px; line-height: 2.2;
+  }
+  #rotate .glyph { font-size: 42px; line-height: 1; margin-bottom: 14px; }
+  @media (orientation: portrait) {
+    html.touch #rotate { display: flex; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="touch-ui">
+  <div id="joy-zone"><div id="joy-base"><div id="joy-thumb"></div></div></div>
+  <button class="tbtn" id="btn-use">USE</button>
+  <button class="tbtn" id="btn-jump">JUMP</button>
+  <button class="tbtn" id="btn-food">EAT</button>
+  <button class="tbtn" id="btn-inv">BAG</button>
+</div>
+
+<div id="hud">
+  <div id="meters">
+    <div class="meter"><label>Health</label><div class="bar" id="bar-health"><div></div></div></div>
+    <div class="meter"><label>Stamina</label><div class="bar" id="bar-stamina"><div></div></div></div>
+  </div>
+  <div id="compass">
+    <div id="compass-dial">
+      <span class="cn">N</span><span class="ce">E</span><span class="cs">S</span><span class="cw">W</span>
+    </div>
+    <div id="compass-caret"></div>
+  </div>
+  <div id="clock">
+    <div id="clock-time">08:00</div>
+    <div class="sub" id="note-count">Notes found: 0 / 5</div>
+  </div>
+  <div id="objective"></div>
+  <div id="hotbar"></div>
+  <div id="prompt"></div>
+  <div id="toasts"></div>
+  <div id="hint-keys" style="left:16px;transform:none;bottom:16px;text-align:left;">WASD move · double-tap W sprint · Space jump · drag mouse look<br>E interact · I inventory · 1-9 hold item<br>F flashlight / eat · T wait 1h · H help</div>
+</div>
+
+<div id="inv-panel" class="panel" hidden>
+  <h2>Inventory</h2>
+  <div id="inv-grid"></div>
+  <div class="foot" style="margin-top:12px;font-size:11px;opacity:.6;">Press I to close.</div>
+</div>
+
+<div id="note-overlay" hidden>
+  <div class="panel" style="background:none;border:none;box-shadow:none;padding:0;">
+    <div class="paper"><h3 id="note-title"></h3><div id="note-date">February 7th 1982</div><div id="note-body"></div><img id="note-img" hidden alt="hand-drawn map"></div>
+    <div class="close-hint">press any key to put it down</div>
+  </div>
+</div>
+
+<div id="help" class="panel" hidden>
+  <h2>How to survive</h2>
+  <p style="font-size:12px;line-height:2;">
+    <b>WASD</b> — move &nbsp; <b>double-tap W</b> — sprint (15s of stamina) &nbsp; <b>Space</b> — jump<br>
+    <b>Mouse drag</b> — look &nbsp; <b>1–9</b> — hold a hotbar item (or click it in the inventory)<br>
+    <b>E</b> — interact: search, pick up, read<br>
+    <b>I</b> — inventory &nbsp; <b>F</b> — eat food &nbsp; <b>T</b> — wait one hour &nbsp; <b>H</b> — this panel<br><br>
+    <b>Follow the objective line</b> (top right): the wreck, the map, the cabin,<br>
+    and what waits on the great hill will lead you out. Or not.<br><br>
+    <b>Staying alive:</b> eating heals you (F) — berries grow on bushes, grubs hide in<br>
+    rotten stumps, and rations are packed away in luggage and crates.<br>
+    Health also mends slowly on its own. Stamina refills when you stop sprinting.<br><br>
+    <b>Danger:</b> bears hold their territory and will charge; wolves hunt at night;<br>
+    snakes bite if you stand over them. All of them fear the fire — but don't stand IN it.<br><br>
+    Stay near the fire at night. It does not like the fire.<br>
+    It will not cross running water. Nobody remembers why we know that.
+  </p>
+</div>
+
+<div id="vignette"></div>
+<div id="grain"></div>
+<div id="rotate">
+  <div class="glyph">⟳</div>
+  turn your device sideways<br>
+  <span style="font-size:11px;opacity:.6;">the quiet wood is played in landscape</span>
+</div>
+<div id="hurt"></div>
+<div id="fade"></div>
+
+<div id="death" hidden>
+  <h1>The Quiet Wood</h1>
+  <p id="death-text"></p>
+  <p class="final">refresh the page to try again</p>
+</div>
+
+<div id="ending" hidden>
+  <h1>The Quiet Wood</h1>
+  <p id="ending-text"></p>
+  <p class="final">refresh the page to try again</p>
+</div>
+
+<div id="start">
+  <h1>The Quiet Wood</h1>
+  <p>After discovering a mysterious plane crash deep in the forest,<br>
+  you must reach an old radio tower to escape — while an unknown<br>
+  presence silently stalks the woods surrounding you.</p>
+  <div class="keys">
+    WASD — move &nbsp;·&nbsp; drag mouse — look &nbsp;·&nbsp; E — use &nbsp;·&nbsp; F — flashlight
+  </div>
+  <button id="btn-start">Begin</button>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/GLTFLoader.js"></script>
+<script src="lib/SkeletonUtils.js"></script>
+<script src="lib/Water.js"></script>
+<script src="assets-data.js"></script>
+<script src="map.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

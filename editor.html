@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Quiet Wood — Map Editor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #14180f; color: #cfd6c3;
+    font-family: "Courier New", monospace;
+    display: flex; min-height: 100vh; gap: 18px; padding: 18px;
+  }
+  #left { flex: none; }
+  canvas {
+    background: #1a2314; border: 2px solid rgba(210,220,195,.35);
+    cursor: grab; display: block;
+  }
+  canvas.dragging { cursor: grabbing; }
+  #panel { flex: 1; max-width: 400px; font-size: 13px; line-height: 1.7; }
+  h1 { font-size: 16px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 12px; color: #b9c2a8; }
+  h2 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: .7; margin: 14px 0 6px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .row label { width: 110px; font-size: 12px; opacity: .85; }
+  input[type=range] { flex: 1; }
+  input[type=number] {
+    width: 110px; background: #0d110a; color: #cfd6c3; border: 1px solid rgba(210,220,195,.35);
+    font-family: inherit; padding: 3px 6px;
+  }
+  button {
+    background: none; color: #cfd6c3; border: 1px solid #cfd6c3;
+    font-family: inherit; font-size: 12px; letter-spacing: 1px;
+    padding: 6px 12px; cursor: pointer; margin: 3px 4px 3px 0;
+  }
+  button:hover { background: rgba(207,214,195,.12); }
+  button.primary { border-color: #9ec27a; color: #b6d896; }
+  button.danger { border-color: #c27a6a; color: #d89686; }
+  #palette button { font-size: 11px; padding: 5px 9px; }
+  #warnings { color: #d9a06a; font-size: 12px; margin-top: 8px; min-height: 20px; }
+  #hint { font-size: 12px; opacity: .7; margin-top: 4px; max-width: 780px; }
+  .legend { font-size: 11px; opacity: .85; column-count: 2; margin-top: 6px; }
+  .legend div { margin-bottom: 2px; }
+  .sw { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; border-radius: 2px; }
+  #footer { font-size: 11px; opacity: .55; margin-top: 14px; line-height: 1.8; }
+  #selinfo { font-size: 12px; color: #b6d896; min-height: 18px; }
+  textarea {
+    width: 100%; height: 74px; background: #0d110a; color: #9fae8c;
+    border: 1px solid rgba(210,220,195,.25); font-family: inherit; font-size: 10px; margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div id="left">
+  <canvas id="map" width="780" height="780"></canvas>
+  <div id="hint">Drag anything to move it. Click a placed prop to select it (Delete key or the button removes it).
+  The crash site is fixed — the story starts there.</div>
+</div>
+
+<div id="panel">
+  <h1>Map Editor</h1>
+
+  <h2>World</h2>
+  <div class="row"><label>World size</label><input type="range" id="worldSize" min="150" max="350" step="10"><span id="worldSizev"></span></div>
+  <div class="row"><label>River position</label><input type="range" id="riverX" min="-140" max="140" step="1"><span id="riverXv"></span></div>
+  <div class="row"><label>Pond radius</label><input type="range" id="pondR" min="8" max="22" step="1"><span id="pondRv"></span></div>
+  <div class="row"><label>Forest seed</label><input type="number" id="seed"><button id="dice" title="random seed">🎲</button></div>
+
+  <h2>Add props (click, then drag into place)</h2>
+  <div id="palette">
+    <button data-type="trees">+ Tree clump</button>
+    <button data-type="deadtrees">+ Dead trees</button>
+    <button data-type="boulders">+ Boulders</button>
+    <button data-type="berries">+ Berry patch</button>
+    <button data-type="tent">+ Old tent</button>
+    <button data-type="ruin">+ Ruin</button>
+    <button data-type="carcass">+ Carcass</button>
+    <button data-type="clearing">+ Clearing</button>
+  </div>
+  <div id="selinfo"></div>
+  <button class="danger" id="delete">Delete selected prop</button>
+
+  <h2>Story markers</h2>
+  <div class="legend">
+    <div><span class="sw" style="background:#d94f3a"></span>Crash (fixed)</div>
+    <div><span class="sw" style="background:#ff9a33"></span>Campfire</div>
+    <div><span class="sw" style="background:#8a6a42"></span>Log cabin</div>
+    <div><span class="sw" style="background:#c2b280"></span>Campsite</div>
+    <div><span class="sw" style="background:#8f979e"></span>Hunter's blind</div>
+    <div><span class="sw" style="background:#3a3f36"></span>The hollow</div>
+    <div><span class="sw" style="background:#7a8a5a"></span>Great hill + shack</div>
+    <div><span class="sw" style="background:#6a4f2e"></span>Bridge (on river)</div>
+    <div><span class="sw" style="background:#e8d87a"></span>Map pieces 2–5</div>
+    <div><span class="sw" style="background:#4f7a3a"></span>Tall grass</div>
+    <div><span class="sw" style="background:#5a7a94"></span>Pond</div>
+  </div>
+
+  <h2>Export</h2>
+  <button class="primary" id="download">Download map.js</button>
+  <button id="copy">Copy JSON</button>
+  <button id="reset">Reset defaults</button>
+  <div class="row" style="margin-top:6px;"><label>Import file</label><input type="file" id="import" accept=".js,.json"></div>
+  <textarea id="json" readonly></textarea>
+
+  <div id="warnings"></div>
+
+  <div id="footer">
+    HOW TO USE: arrange the world, then <b>Download map.js</b> and save it into the
+    game folder, replacing the old map.js. Reload index.html — the game builds your
+    layout, scales the forest to the world size, and adapts all quest text and
+    compass directions. North is up.
+  </div>
+</div>
+
+<script>
+'use strict';
+const DEFAULTS = {
+  seed: 20260713,
+  worldSize: 190,
+  props: [],
+  riverX: 60,
+  pond: { x: 45, z: -70, r: 13 },
+  hill: { x: 148, z: 148 },
+  bridgeZ: 55,
+  fire: { x: 11, z: 8 },
+  cabin: { x: -95, z: 85 },
+  campsite: { x: 95, z: -115 },
+  blind: { x: -140, z: -55 },
+  hollow: { x: -170, z: -170 },
+  pieces: [{ x: -34, z: 27 }, { x: 42, z: -16 }, { x: -15, z: -45 }, { x: 30, z: 41 }],
+  tallGrass: [{ x: 40, z: -45 }, { x: -55, z: 20 }, { x: 80, z: 40 }, { x: -20, z: -70 }],
+};
+const PROP_STYLE = {
+  trees: { color: '#3f6a30', label: 'Tree clump', zone: 9 },
+  deadtrees: { color: '#6b655a', label: 'Dead trees', zone: 6 },
+  boulders: { color: '#8a8a82', label: 'Boulders', zone: 4 },
+  berries: { color: '#a84058', label: 'Berry patch', zone: 4 },
+  tent: { color: '#9a8f6a', label: 'Old tent', zone: 3 },
+  ruin: { color: '#7a5f3a', label: 'Ruin', zone: 3 },
+  carcass: { color: '#7a2a28', label: 'Carcass', zone: 2 },
+  clearing: { color: '#b9c2a8', label: 'Clearing', zone: 16, dashed: true },
+};
+let cfg = JSON.parse(localStorage.getItem('qw-map') || 'null') || JSON.parse(JSON.stringify(DEFAULTS));
+if (!cfg.worldSize) cfg.worldSize = 190;
+if (!cfg.props) cfg.props = [];
+let selectedProp = -1;
+
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+let HALF = 205, S = 1;
+function rescale() {
+  HALF = cfg.worldSize + 15;
+  S = canvas.width / (HALF * 2);
+}
+const px = x => (x + HALF) * S;
+const pz = z => (z + HALF) * S;
+const clampW = v => Math.max(-(cfg.worldSize - 5), Math.min(cfg.worldSize - 5, v));
+
+function markers() {
+  const m = [
+    { name: 'Campfire', color: '#ff9a33', r: 7, get: () => cfg.fire, set: p => { cfg.fire.x = p.x; cfg.fire.z = p.z; } },
+    { name: 'Log cabin', color: '#8a6a42', r: 9, square: true, get: () => cfg.cabin, set: p => { cfg.cabin.x = p.x; cfg.cabin.z = p.z; } },
+    { name: 'Campsite', color: '#c2b280', r: 7, square: true, get: () => cfg.campsite, set: p => { cfg.campsite.x = p.x; cfg.campsite.z = p.z; } },
+    { name: "Hunter's blind", color: '#8f979e', r: 6, square: true, get: () => cfg.blind, set: p => { cfg.blind.x = p.x; cfg.blind.z = p.z; } },
+    { name: 'The hollow', color: '#3a3f36', r: 9, get: () => cfg.hollow, set: p => { cfg.hollow.x = p.x; cfg.hollow.z = p.z; } },
+    { name: 'Great hill', color: '#7a8a5a', r: 10, get: () => cfg.hill, set: p => { cfg.hill.x = p.x; cfg.hill.z = p.z; } },
+    { name: 'Pond', color: '#5a7a94', r: 8, get: () => cfg.pond, set: p => { cfg.pond.x = p.x; cfg.pond.z = p.z; } },
+    { name: 'Bridge', color: '#6a4f2e', r: 7, square: true,
+      get: () => ({ x: cfg.riverX, z: cfg.bridgeZ }),
+      set: p => { cfg.bridgeZ = p.z; } },
+  ];
+  cfg.pieces.forEach((p, i) => m.push({
+    name: 'Piece ' + (i + 2), color: '#e8d87a', r: 6,
+    get: () => p, set: q => { p.x = q.x; p.z = q.z; },
+  }));
+  cfg.tallGrass.forEach((g, i) => m.push({
+    name: 'Grass ' + (i + 1), color: '#4f7a3a', r: 6, zone: 14,
+    get: () => g, set: q => { g.x = q.x; g.z = q.z; },
+  }));
+  cfg.props.forEach((p, i) => {
+    const st = PROP_STYLE[p.type] || { color: '#888', label: p.type, zone: 4 };
+    m.push({
+      name: st.label, color: st.color, r: 7, prop: i,
+      zone: st.zone, dashed: st.dashed,
+      get: () => p, set: q => { p.x = q.x; p.z = q.z; },
+    });
+  });
+  return m;
+}
+
+function draw() {
+  rescale();
+  const W = canvas.width;
+  ctx.clearRect(0, 0, W, W);
+  ctx.fillStyle = '#1a2314';
+  ctx.fillRect(0, 0, W, W);
+  const ws = cfg.worldSize;
+  ctx.fillStyle = '#2a3a20';
+  ctx.fillRect(px(-ws), pz(-ws), ws * 2 * S, ws * 2 * S);
+  ctx.strokeStyle = 'rgba(210,220,195,.07)';
+  ctx.lineWidth = 1;
+  for (let g = -Math.floor(ws / 50) * 50; g <= ws; g += 50) {
+    ctx.beginPath(); ctx.moveTo(px(g), pz(-ws)); ctx.lineTo(px(g), pz(ws)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(px(-ws), pz(g)); ctx.lineTo(px(ws), pz(g)); ctx.stroke();
+  }
+  for (const r of [62, 46, 30, 14]) {
+    ctx.strokeStyle = 'rgba(160,180,130,.25)';
+    ctx.beginPath(); ctx.arc(px(cfg.hill.x), pz(cfg.hill.z), r * S, 0, 7); ctx.stroke();
+  }
+  ctx.fillStyle = '#4a6a78';
+  ctx.fillRect(px(cfg.riverX - 9), pz(-ws), 18 * S, ws * 2 * S);
+  ctx.beginPath(); ctx.arc(px(cfg.pond.x), pz(cfg.pond.z), cfg.pond.r * S, 0, 7); ctx.fill();
+  ctx.fillStyle = '#6a4f2e';
+  ctx.fillRect(px(cfg.riverX - 13), pz(cfg.bridgeZ) - 2.2 * S, 26 * S, 4.4 * S);
+  // crash site
+  ctx.strokeStyle = '#d94f3a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(px(-6), pz(-6)); ctx.lineTo(px(6), pz(6)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px(6), pz(-6)); ctx.lineTo(px(-6), pz(6)); ctx.stroke();
+  ctx.strokeStyle = 'rgba(217,79,58,.4)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(px(0), pz(0), 30 * S, 0, 7); ctx.stroke();
+
+  ctx.font = '11px Courier New';
+  markers().forEach(m => {
+    const p = m.get();
+    const X = px(p.x), Z = pz(p.z);
+    if (m.zone) {
+      ctx.fillStyle = m.dashed ? 'rgba(185,194,168,.12)' : m.color + '44';
+      ctx.strokeStyle = m.color + '99';
+      ctx.setLineDash(m.dashed ? [5, 5] : []);
+      ctx.beginPath(); ctx.arc(X, Z, m.zone * S, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = m.color;
+    ctx.strokeStyle = m.prop === selectedProp && m.prop !== undefined ? '#ffffff' : 'rgba(0,0,0,.6)';
+    ctx.lineWidth = m.prop === selectedProp && m.prop !== undefined ? 2.5 : 1.5;
+    if (m.square) { ctx.fillRect(X - m.r, Z - m.r, m.r * 2, m.r * 2); ctx.strokeRect(X - m.r, Z - m.r, m.r * 2, m.r * 2); }
+    else { ctx.beginPath(); ctx.arc(X, Z, m.r, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = '#e6ecd2';
+    ctx.fillText(m.name, X + m.r + 4, Z + 4);
+  });
+  ctx.fillStyle = 'rgba(230,236,210,.8)';
+  ctx.font = 'bold 14px Courier New';
+  ctx.fillText('N', 12, 20);
+  ctx.beginPath(); ctx.moveTo(16, 42); ctx.lineTo(12, 30); ctx.lineTo(20, 30); ctx.fill();
+
+  updatePanel();
+  validate();
+}
+
+/* dragging + selection */
+let dragging = null;
+canvas.addEventListener('mousedown', e => {
+  const r = canvas.getBoundingClientRect();
+  const mx = e.clientX - r.left, mz = e.clientY - r.top;
+  const list = markers();
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i];
+    const p = m.get();
+    if (Math.hypot(mx - px(p.x), mz - pz(p.z)) < m.r + 6) {
+      dragging = m;
+      selectedProp = m.prop !== undefined ? m.prop : -1;
+      canvas.classList.add('dragging');
+      draw();
+      return;
+    }
+  }
+  selectedProp = -1;
+  draw();
+});
+addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const r = canvas.getBoundingClientRect();
+  dragging.set({
+    x: Math.round(clampW((e.clientX - r.left) / S - HALF)),
+    z: Math.round(clampW((e.clientY - r.top) / S - HALF)),
+  });
+  save(); draw();
+});
+addEventListener('mouseup', () => { dragging = null; canvas.classList.remove('dragging'); });
+addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedProp >= 0 && document.activeElement.tagName !== 'INPUT') {
+    cfg.props.splice(selectedProp, 1);
+    selectedProp = -1;
+    save(); draw();
+  }
+});
+
+/* panel */
+const $ = id => document.getElementById(id);
+$('worldSize').addEventListener('input', () => { cfg.worldSize = +$('worldSize').value; save(); draw(); });
+$('riverX').addEventListener('input', () => { cfg.riverX = +$('riverX').value; save(); draw(); });
+$('pondR').addEventListener('input', () => { cfg.pond.r = +$('pondR').value; save(); draw(); });
+$('seed').addEventListener('change', () => { cfg.seed = Math.floor(+$('seed').value) || 1; save(); draw(); });
+$('dice').addEventListener('click', () => { cfg.seed = Math.floor(Math.random() * 1e8); save(); draw(); });
+$('reset').addEventListener('click', () => { cfg = JSON.parse(JSON.stringify(DEFAULTS)); selectedProp = -1; save(); draw(); });
+$('delete').addEventListener('click', () => {
+  if (selectedProp >= 0) { cfg.props.splice(selectedProp, 1); selectedProp = -1; save(); draw(); }
+});
+document.querySelectorAll('#palette button').forEach(b => b.addEventListener('click', () => {
+  // spawn near the centre at a free-ish spot, then let them drag it
+  cfg.props.push({ type: b.dataset.type, x: 20 + Math.round(Math.random() * 30), z: -20 - Math.round(Math.random() * 30) });
+  selectedProp = cfg.props.length - 1;
+  save(); draw();
+}));
+
+function updatePanel() {
+  $('worldSize').value = cfg.worldSize; $('worldSizev').textContent = '±' + cfg.worldSize + 'm';
+  $('riverX').value = cfg.riverX; $('riverXv').textContent = cfg.riverX;
+  $('pondR').value = cfg.pond.r; $('pondRv').textContent = cfg.pond.r + 'm';
+  $('seed').value = cfg.seed;
+  $('json').value = JSON.stringify(cfg);
+  $('selinfo').textContent = selectedProp >= 0
+    ? 'Selected: ' + (PROP_STYLE[cfg.props[selectedProp].type] || {}).label + ' at (' + cfg.props[selectedProp].x + ', ' + cfg.props[selectedProp].z + ')'
+    : cfg.props.length + ' prop' + (cfg.props.length === 1 ? '' : 's') + ' placed';
+}
+
+function exportText() {
+  return '/* The Quiet Wood — world layout. Generated by editor.html. */\n' +
+    'window.MAP_DATA = ' + JSON.stringify(cfg, null, 2) + ';\n';
+}
+$('download').addEventListener('click', () => {
+  const blob = new Blob([exportText()], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'map.js';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$('copy').addEventListener('click', () => navigator.clipboard.writeText(JSON.stringify(cfg)));
+$('import').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then(t => {
+    const m = t.match(/\{[\s\S]*\}/);
+    if (!m) { alert('Could not find a layout object in that file.'); return; }
+    try {
+      cfg = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), JSON.parse(m[0]));
+      if (!cfg.props) cfg.props = [];
+      selectedProp = -1;
+      save(); draw();
+    } catch (err) { alert('Could not parse that file: ' + err.message); }
+  });
+});
+
+function save() { localStorage.setItem('qw-map', JSON.stringify(cfg)); }
+
+function inWater(p) {
+  return Math.abs(p.x - cfg.riverX) < 12 || Math.hypot(p.x - cfg.pond.x, p.z - cfg.pond.z) < cfg.pond.r + 3;
+}
+function validate() {
+  const w = [];
+  const dry = [['Campfire', cfg.fire], ['Cabin', cfg.cabin], ['Campsite', cfg.campsite],
+    ['Blind', cfg.blind], ['Hollow', cfg.hollow]];
+  cfg.pieces.forEach((p, i) => dry.push(['Map piece ' + (i + 2), p]));
+  cfg.props.forEach((p, i) => { if (p.type !== 'clearing') dry.push([(PROP_STYLE[p.type] || {}).label + ' (prop)', p]); });
+  for (const [n, p] of dry) if (inWater(p)) w.push(n + ' is in the water.');
+  if (Math.hypot(cfg.fire.x, cfg.fire.z) > 25) w.push('Campfire is far from the crash — the opening will feel unanchored.');
+  cfg.pieces.forEach((p, i) => {
+    const d = Math.hypot(p.x, p.z);
+    if (d > 70) w.push('Map piece ' + (i + 2) + ' is very far from the crash (' + Math.round(d) + 'm).');
+    if (d < 12) w.push('Map piece ' + (i + 2) + ' is inside the crash clearing — too easy.');
+  });
+  if (Math.hypot(cfg.hill.x, cfg.hill.z) < 90) w.push('The hill is close to the crash — the journey act will be short.');
+  const out = p => Math.abs(p.x) > cfg.worldSize - 8 || Math.abs(p.z) > cfg.worldSize - 8;
+  for (const [n, p] of dry) if (out(p)) w.push(n + ' is outside the playable world.');
+  if (out(cfg.hill)) w.push('The hill is outside the playable world.');
+  document.getElementById('warnings').innerHTML = w.length ? '⚠ ' + w.join('<br>⚠ ') : '✓ Layout looks playable.';
+}
+
+draw();
+</script>
+</body>
+</html>

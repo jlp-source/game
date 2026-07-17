@@ -1,0 +1,11 @@
+Third-party assets used by The Quiet Wood:
+
+fox.glb    - "Fox" from Khronos glTF-Sample-Models. Model: PixelMannen (CC0),
+             rigging/animation: @tomkranis, CC-BY 4.0.
+stork.glb  - From three.js examples (mirada.com for ro.me), MIT license.
+monster.glb- "Zombie" by Quaternius (poly.pizza/m/VlXjG0N8Eg), CC0.
+             Rendered in-game as the black figure; rig and animations used as-is.
+bark.jpg   - "Pine Bark" texture, Poly Haven, CC0.
+leaves.jpg - "Forest Leaves 03" texture, Poly Haven, CC0.
+ground.jpg - "Forest Ground 04" texture, Poly Haven, CC0.
+rock.jpg   - "Mossy Rock" texture, Poly Haven, CC0.
