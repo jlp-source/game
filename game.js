@@ -117,41 +117,32 @@ const PART_SPOTS = {
   'Spark Plug': { x: GEN.x + 9,  z: GEN.z + 8 },
   'Drive Belt': { x: GEN.x - 4,  z: GEN.z - 13 },
 };
-/* the log shed stands a hundred metres off the cabin walk (perpendicular from
-   its midpoint), so the direct path to the cabin never brushes it — only its
-   own worn spurs lead there */
-const SHED = (() => {
-  const a = { x: 3, z: 6 }, b = cabRot(0, 6.5); // the cabin walk's endpoints
-  const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
-  return { x: Math.round((a.x + b.x) / 2 + dz / L * 100), z: Math.round((a.z + b.z) / 2 - dx / L * 100) };
-})();
-const SHED_ROT = Math.atan2(3 - SHED.x, 6 - SHED.z); // its door looks toward the crash
+/* the log shed now stands ACROSS the river, off to the south-east of the crash —
+   the only way to it runs over the bridge, so no shed path comes near the crash
+   clearing and the cabin walk stays clean and clear */
+const SHED = { x: 105, z: 103 }; // east bank, ~50m south-east of the bridge crossing (clear of the generator)
+// the door faces back the way you arrive — up toward the bridge you crossed to
+// get here — so the doorway is the first thing you see, not a blank log wall
+const SHED_ROT = Math.atan2((RIVER_X + 14) - SHED.x, MAPCFG.bridgeZ - SHED.z);
 
 /* the walked trails — defined early so the forest leaves them clear.
-   One leaves the crash mud for the cabin; the other leaves the opposite side
-   for the bridge, and picks up again across the river toward the tower. */
-const TRAIL_A = { x: 3, z: 6 };
+   The two paths leave the crash clearing from OPPOSITE sides: the cabin path
+   from the west edge, the bridge path from the east edge, with the open ground
+   and the wreck between them. So on either path you never sight the other — the
+   ring of trees and the fuselage screen the one from the other. */
+const TRAIL_A = { x: -15, z: 6 };   // the cabin path's mouth, on the west treeline
 const TRAIL_B = cabRot(0, 6.5);
 const TRAIL_LEN = Math.hypot(TRAIL_B.x - TRAIL_A.x, TRAIL_B.z - TRAIL_A.z);
 const TRAIL_LEGS = [
-  { a: TRAIL_A, b: TRAIL_B },                                                  // crash -> cabin porch
-  // crash -> the bridge, in two legs so the last stretch arrives square-on
-  // to the bridge instead of climbing diagonally across the bank
-  { a: { x: 6, z: 1 }, b: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 } },
+  { a: TRAIL_A, b: TRAIL_B },                                                  // crash (west edge) -> cabin porch
+  // the bridge path leaves the EAST edge of the clearing, in two legs so the
+  // last stretch arrives square-on to the bridge instead of climbing the bank
+  { a: { x: 13, z: -3 }, b: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 } },
   { a: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },
-  { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ },                           // over the river -> the hill
-    b: { x: HILL.x - 10, z: HILL.z + 9 } },
-  // the trapper's round: the cabin path carries on FROM the porch, sweeps in a
-  // gentle arc past and around behind the cabin, and flows east to the shed —
-  // five short true-running legs, so it reads as one worn winding path.
-  // From the shed a spur re-enters the crash clearing on its north-east side,
-  // well away from the cabin path's mouth, so the two can't be mistaken
-  { a: cabRot(0, 6.5), b: { x: -222, z: 146 } },
-  { a: { x: -222, z: 146 }, b: { x: -231, z: 160 } },
-  { a: { x: -231, z: 160 }, b: { x: -215, z: 172 } },
-  { a: { x: -215, z: 172 }, b: { x: -160, z: 170 } },
-  { a: { x: -160, z: 170 }, b: SHED },
-  { a: SHED, b: { x: 7, z: 11 } }, // runs all the way in to the clearing's north edge
+  // once you cross the bridge a single worn path runs on to the shed — there is
+  // no separate trail to the watch tower; the walk over the far bank leads only
+  // to the shed, and no shed path comes near the crash clearing or the cabin walk.
+  { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ }, b: SHED },
 ];
 function legNear(L, x, z, margin) {
   const dx = L.b.x - L.a.x, dz = L.b.z - L.a.z, len = Math.hypot(dx, dz);
@@ -291,11 +282,12 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffeecc, 0.9);
 sun.position.set(60, 80, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(COARSE ? 1536 : 2048, COARSE ? 1536 : 2048);
+sun.shadow.mapSize.set(COARSE ? 2048 : 3072, COARSE ? 2048 : 3072); // sharper contact shadows
 sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
 sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
 sun.shadow.camera.near = 20; sun.shadow.camera.far = 220;
-sun.shadow.bias = -0.002;
+sun.shadow.bias = -0.0015;
+sun.shadow.normalBias = 0.03; // kills the shadow acne / peter-panning on the logs and ground
 scene.add(sun);
 scene.add(sun.target);
 
@@ -757,12 +749,16 @@ function playerGroundY(x, z) {
     if (Math.abs(x - HILL.x) < 2.9 && Math.abs(z - HILL.z) < 2.9) return TOWER.y;
     state.onTower = false; // stepped off the edge — gravity handles the rest
   }
-  let g = Math.max(gridHeight(x, z), -0.75);
+  // stand on the true ground everywhere, the whole game through — your eyes ride
+  // a fixed 1.68m above whatever ground you can see, with no artificial floor
+  // lifting you above the low terrain. (a -0.75 clamp once lived here and left you
+  // floating over the low ground, standing taller than the cabin porch it sat in.)
+  const cdx = x - CABIN.x, cdz = z - CABIN.z;
+  let g = gridHeight(x, z);
   if (Math.hypot(x, z) < 14) g += gougeRelief(x, z);
   if (onBridge(x, z)) g = Math.max(g, BRIDGE.deckY);
   // inside the cabin you stand on its plank floor, not the uneven dirt it was
   // built over — the floor hangs from the cabin's base height at its centre
-  const cdx = x - CABIN.x, cdz = z - CABIN.z;
   if (Math.abs(cdx) < 8 && Math.abs(cdz) < 8) {
     const c = Math.cos(0.5), s = Math.sin(0.5);
     const lx = cdx * c - cdz * s, lz = cdx * s + cdz * c;
@@ -1825,45 +1821,112 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     const W = 10, D = 7.5, ROWS = 7;
     const logBark = mat(0x5d4930, { map: barkTex }), logBark2 = mat(0x52402a, { map: barkTex });
     const stoneM2 = mat(0x7a7a74), shutterM = mat(0x41321f);
-    // dry-stone footing lifts the sill logs off the dirt
-    const footing = [[-4.6, -3.75], [-1.6, -3.75], [1.6, -3.75], [4.6, -3.75],
-                     [-4.6, 3.75], [4.6, 3.75], [-5, -1.9], [-5, 1.9], [5, -1.9], [5, 1.9]];
-    footing.forEach(([fx, fz], i) => {
-      const st = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(0.32), 0.14), i % 2 ? stoneM : stoneM2);
-      st.position.set(fx, 0.06, fz);
-      st.rotation.y = i * 1.3;
-      g.add(st);
-    });
-    // stacked log courses, ends run long past the corners for the saddle notches
+    // dry-stone footing: a proper rubble foundation course of close-packed field
+    // stones, stacked two rough courses high all round, lifting the sill logs clear
+    // of the wet ground — every stone irregular, varied in size and tone, mossed
+    // along the shaded north foot. The front leaves a clear span for the doorway.
+    {
+      const stoneTones = [0x807c72, 0x726e64, 0x8a8579, 0x6a675d, 0x787468, 0x817b6d];
+      const edges = [[-5, -3.75, 5, -3.75, false], [-5, 3.75, 5, 3.75, true],
+                     [-5, -3.75, -5, 3.75, false], [5, -3.75, 5, 3.75, false]];
+      let si = 3;
+      for (const [ax, az, bx, bz, isFront] of edges) {
+        const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
+        const ux = dx / L, uz = dz / L, n = Math.round(L / 0.68);
+        for (let k = 0; k <= n; k++) {
+          const wx0 = ax + ux * (k / n) * L;
+          if (isFront && Math.abs(wx0) < 2.2) continue; // keep the threshold clear
+          for (let course = 0; course < 2; course++) {
+            const r = 0.24 + rng() * 0.13;
+            const along = (k / n) * L + (rng() - 0.5) * 0.16;
+            si++;
+            const st = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(r), r * 0.55),
+              mat(stoneTones[si % stoneTones.length]));
+            st.position.set(ax + ux * along + uz * (rng() - 0.5) * 0.12,
+                            0.06 + course * 0.27 + (rng() - 0.5) * 0.05,
+                            az + uz * along + ux * (rng() - 0.5) * 0.12);
+            st.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+            st.scale.set(1, 0.72 + rng() * 0.3, 0.9 + rng() * 0.25);
+            st.castShadow = true;
+            g.add(st);
+          }
+        }
+      }
+      // moss creeping over the shaded north foot of the wall
+      for (let m = 0; m < 9; m++) {
+        const moss = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), mat(m % 2 ? 0x55632f : 0x4c5a2c));
+        moss.position.set(-4.6 + rng() * 9.2, 0.1 + rng() * 0.28, -3.98 - rng() * 0.15);
+        moss.scale.set(0.13 + rng() * 0.12, 0.05, 0.1 + rng() * 0.08);
+        g.add(moss);
+      }
+    }
+    // window openings are cut clean through the courses at these heights, so the
+    // glass shows daylight and the forest beyond instead of a wall of logs
+    const WIN_BAND = [1.05, 2.34], WIN_HALF = 0.72;
+    const winFrontX = [-3.0, 3.0], winBackX = [1.8];
+    // subtract a set of [min,max] gaps from a span, returning the surviving runs
+    function subtractGaps(min, max, gaps) {
+      let segs = [[min, max]];
+      for (const [ga, gb] of gaps) {
+        const next = [];
+        for (const [a, b] of segs) {
+          if (gb <= a || ga >= b) { next.push([a, b]); continue; }
+          if (ga > a) next.push([a, ga]);
+          if (gb < b) next.push([gb, b]);
+        }
+        segs = next;
+      }
+      return segs;
+    }
+    // one log course running along an axis (ends run long past the corners for the
+    // saddle notches), broken by any gap intervals for the door and windows
+    function logCourse(axis, fixed, ry, rr, rm, gaps) {
+      const half = (axis === 'x' ? W : D) / 2 + 0.55;
+      for (const [a, b] of subtractGaps(-half, half, gaps || [])) {
+        const len = b - a; if (len < 0.06) continue;
+        const mid = (a + b) / 2;
+        const log = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, len, 7), rm);
+        if (axis === 'x') { log.rotation.z = Math.PI / 2; log.position.set(mid, ry, fixed); }
+        else { log.rotation.x = Math.PI / 2; log.position.set(fixed, ry + 0.22, mid); }
+        g.add(log);
+      }
+    }
+    // stacked log courses on all four walls
     for (let row = 0; row < ROWS; row++) {
       const ry = 0.3 + row * 0.44;
       const rm = row % 2 ? logBark : logBark2;
       const rr = 0.23 + (row % 3) * 0.015; // the logs aren't all the same girth
-      const back = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, W + 1.1, 7), rm);
-      back.rotation.z = Math.PI / 2;
-      back.position.set(0, ry, -D / 2);
-      g.add(back);
-      for (const s of [-1, 1]) {
-        const side = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, D + 1.1, 7), row % 2 ? logBark2 : logBark);
-        side.rotation.x = Math.PI / 2;
-        side.position.set(s * W / 2, ry + 0.22, 0);
-        g.add(side);
-      }
-      // front wall: doorway gap; top row runs full width as a header
+      const inBand = ry > WIN_BAND[0] && ry < WIN_BAND[1];
+      // back wall (z = -D/2), broken by its one window when the course is in band
+      logCourse('x', -D / 2, ry, rr, rm,
+        inBand ? winBackX.map(wx => [wx - WIN_HALF, wx + WIN_HALF]) : []);
+      // side walls (x = ±W/2), unbroken
+      for (const s of [-1, 1]) logCourse('z', s * W / 2, ry, rr, row % 2 ? logBark2 : logBark, []);
+      // front wall (z = +D/2): the top course runs full as a header; the rest carry
+      // the doorway gap, plus its two windows when the course is in band
       if (row === ROWS - 1) {
-        const header = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, W + 1.1, 7), rm);
-        header.rotation.z = Math.PI / 2;
-        header.position.set(0, ry, D / 2);
-        g.add(header);
+        logCourse('x', D / 2, ry, rr, rm, []);
       } else {
-        const segLen = W / 2 - 0.85;
-        for (const s of [-1, 1]) {
-          const seg = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, segLen, 7), rm);
-          seg.rotation.z = Math.PI / 2;
-          seg.position.set(s * (0.85 + segLen / 2), ry, D / 2);
-          g.add(seg);
-        }
+        const frontGaps = [[-0.85, 0.85]];
+        if (inBand) for (const wx of winFrontX) frontGaps.push([wx - WIN_HALF, wx + WIN_HALF]);
+        logCourse('x', D / 2, ry, rr, rm, frontGaps);
       }
+    }
+    // knots and the odd driven peg standing proud of the logs, here and there
+    for (let i = 0; i < 18; i++) {
+      const face = i % 4, kr = 0.045 + rng() * 0.04;
+      const knot = new THREE.Mesh(new THREE.CylinderGeometry(kr, kr * 0.65, 0.07, 6), mat(0x2c2216));
+      const hy = 0.45 + rng() * ((ROWS - 1) * 0.44 - 0.2);
+      if (face < 2) { // front / back
+        const kx = (rng() - 0.5) * (W - 1.6);
+        if (face === 0 && Math.abs(kx) < 1.2 && hy < 2.75) continue; // clear of the doorway
+        knot.rotation.x = Math.PI / 2;
+        knot.position.set(kx, hy, (face ? -1 : 1) * (D / 2 + 0.24));
+      } else { // sides
+        knot.rotation.z = Math.PI / 2;
+        knot.position.set((face === 2 ? -1 : 1) * (W / 2 + 0.24), hy + 0.22, (rng() - 0.5) * (D - 1.4));
+      }
+      g.add(knot);
     }
     // squared door frame set into the gap
     for (const s of [-1, 1]) {
@@ -1874,31 +1937,52 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.18, 0.32), plankM);
     lintel.position.set(0, 2.78, D / 2);
     g.add(lintel);
-    // deep-set windows: dark glass, plank frames, cross mullions, a skewed shutter
+    // deep-set windows, cut right through the wall: a reveal lining round the sawn
+    // log ends, clear glass you can see the forest through, plank frames, cross
+    // mullions, a sill and a skewed shutter
     function cabinWindow(wx, wz) {
       const zs = Math.sign(wz);
-      const glassPane = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.0, 0.1), mat(0x11161a, { shininess: 70 }));
-      glassPane.position.set(wx, 1.75, wz + zs * 0.24);
+      // reveal lining, so the opening reads framed and the log ends don't show
+      const linM = mat(0x3d2f1d, { map: barkTex });
+      const linT = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.1, 0.62), linM);
+      linT.position.set(wx, 2.32, wz); g.add(linT);
+      const linB = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.12, 0.62), linM);
+      linB.position.set(wx, 1.16, wz); g.add(linB);
+      for (const dx of [-0.71, 0.71]) {
+        const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.28, 0.62), linM);
+        jamb.position.set(wx + dx, 1.74, wz); g.add(jamb);
+      }
+      // the glass — clear now, faintly tinted and reflective, see straight through
+      const glassPane = new THREE.Mesh(new THREE.BoxGeometry(1.32, 1.14, 0.04),
+        mat(0x2a373d, { transparent: true, opacity: 0.22, shininess: 130 }));
+      glassPane.position.set(wx, 1.74, wz);
       g.add(glassPane);
-      for (const dy of [0.55, -0.55]) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.12, 0.14), plankM);
-        bar.position.set(wx, 1.75 + dy, wz + zs * 0.3);
+      // outer trim
+      for (const dy of [0.62, -0.62]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 0.14), plankM);
+        bar.position.set(wx, 1.74 + dy, wz + zs * 0.3);
         g.add(bar);
       }
-      for (const dx of [-0.68, 0.68]) {
-        const side = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.14), plankM);
-        side.position.set(wx + dx, 1.75, wz + zs * 0.3);
+      for (const dx of [-0.72, 0.72]) {
+        const side = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.36, 0.14), plankM);
+        side.position.set(wx + dx, 1.74, wz + zs * 0.3);
         g.add(side);
       }
-      const mullV = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.0, 0.13), plankM);
-      mullV.position.set(wx, 1.75, wz + zs * 0.27);
+      // a weathered sill sloping the rain outward
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.1, 0.28), plankM);
+      sill.position.set(wx, 1.1, wz + zs * 0.34);
+      sill.rotation.x = zs * 0.2;
+      g.add(sill);
+      // cross mullions, set proud on the outer face
+      const mullV = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.14, 0.1), plankM);
+      mullV.position.set(wx, 1.74, wz + zs * 0.22);
       g.add(mullV);
-      const mullH = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.13), plankM);
-      mullH.position.set(wx, 1.75, wz + zs * 0.27);
+      const mullH = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.06, 0.1), plankM);
+      mullH.position.set(wx, 1.74, wz + zs * 0.22);
       g.add(mullH);
-      const shutter = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.25, 0.07), shutterM);
-      shutter.position.set(wx + 1.08, 1.62, wz + zs * 0.28);
-      shutter.rotation.z = zs * 0.07; // hanging off its top hinge
+      const shutter = new THREE.Mesh(new THREE.BoxGeometry(0.66, 1.42, 0.07), shutterM);
+      shutter.position.set(wx + 1.12, 1.6, wz + zs * 0.28);
+      shutter.rotation.z = zs * 0.08; // hanging off its top hinge
       g.add(shutter);
     }
     cabinWindow(-3.0, D / 2); cabinWindow(3.0, D / 2); cabinWindow(1.8, -D / 2);
@@ -1934,6 +2018,35 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
         g.add(gl);
       }
     }
+    // a boarded ceiling laid over the tie-beams seals the room off from the roof
+    // void, so no eave slot or shingle seam ever shows the interior from outside
+    {
+      const ceilY = wallTop + 0.44; // above the exposed rafters and purlins
+      // wide enough to overrun the front/back eave slots (the gable logs already
+      // seal the ends), but kept inside the side walls so no board edge shows out
+      const ceilD = D + 0.5, nC = 11, cd = ceilD / nC;
+      const ceilTones = [0x3f3120, 0x463726, 0x392c1c];
+      for (let i = 0; i < nC; i++) {
+        const cb = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.08, cd - 0.015),
+          mat(ceilTones[i % 3], { map: barkTex }));
+        cb.position.set(0, ceilY, -ceilD / 2 + cd * (i + 0.5));
+        g.add(cb);
+      }
+    }
+    // ridge cap boards straddling the seam where the two slopes meet, closing the apex
+    for (const s of [-1, 1]) {
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(W + 2.8, 0.09, 0.55), plankM);
+      cap.position.set(0, wallTop + RISE + 0.05, s * 0.18);
+      cap.rotation.x = -s * PITCH * 0.7;
+      g.add(cap);
+    }
+    // fascia boards hung at the eaves, closing the overhang and trimming the line
+    for (const s of [-1, 1]) {
+      const fascia = new THREE.Mesh(new THREE.BoxGeometry(W + 2.5, 0.3, 0.08), mat(0x35281a, { map: barkTex }));
+      fascia.position.set(0, wallTop + RISE / 2 + 0.06 - SLOPE / 2 * Math.sin(PITCH) - 0.05,
+        s * (HSPAN / 2 + SLOPE / 2 * Math.cos(PITCH)));
+      g.add(fascia);
+    }
     // stone chimney climbing the west gable, clear of the ridge
     for (let i = 0; i < 11; i++) {
       const st = new THREE.Mesh(new THREE.BoxGeometry(1.15 - i * 0.045, 0.55, 1.0 - i * 0.04), i % 2 ? stoneM : stoneM2);
@@ -1966,10 +2079,72 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     porchRoof.position.set(0, 2.85, D / 2 + 1.15);
     porchRoof.rotation.x = 0.26; // high against the wall, sloping down over the posts to shed rain
     g.add(porchRoof);
+    // --- exterior yard clutter: a rain barrel fed by a downspout, a split-wood
+    // stack under the eave, and a birch broom left leaning by the door ---
+    {
+      // rain barrel of staved wood, iron-hooped, at the front-east corner
+      const bx = W / 2 + 0.55, bz = D / 2 - 0.2;
+      const barrelM = mat(0x4a3b26, { map: barkTex });
+      for (let k = 0; k < 13; k++) { // staves
+        const a2 = k / 13 * Math.PI * 2;
+        const stave = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.86, 0.05), barrelM);
+        stave.position.set(bx + Math.cos(a2) * 0.36, 0.46, bz + Math.sin(a2) * 0.36);
+        stave.rotation.y = -a2;
+        g.add(stave);
+      }
+      for (const hy of [0.12, 0.44, 0.78]) { // iron hoops
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.022, 5, 16), mat(0x2b2824));
+        hoop.rotation.x = Math.PI / 2;
+        hoop.position.set(bx, hy, bz);
+        g.add(hoop);
+      }
+      const water = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.02, 14),
+        new THREE.MeshPhongMaterial({ color: 0x2b3a38, shininess: 90, transparent: true, opacity: 0.85 }));
+      water.position.set(bx, 0.82, bz);
+      g.add(water);
+      // a tin downspout running from the eave down the wall into the barrel
+      const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.7, 6), mat(0x6a6558));
+      spout.position.set(W / 2 + 0.2, 1.85, bz);
+      g.add(spout);
+      const elbow = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 6), mat(0x6a6558));
+      elbow.rotation.z = Math.PI / 2.6;
+      elbow.position.set(bx - 0.18, 0.98, bz);
+      g.add(elbow);
+      // split firewood stacked against the wall under the eave (west of the door)
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+        const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.08, 1.1, 6),
+          (r + c) % 2 ? logBark : logBark2);
+        lg.rotation.z = Math.PI / 2;
+        lg.rotation.y = (rng() - 0.5) * 0.1;
+        lg.position.set(-W / 2 - 0.28, 0.14 + r * 0.16, D / 2 - 1.0 - c * 0.17 + (r % 2) * 0.05);
+        g.add(lg);
+      }
+      // a birch-twig broom leaning by the doorframe
+      const broomH = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 1.3, 6), mat(0x8a6a3a));
+      broomH.position.set(1.35, 0.75, D / 2 + 0.22);
+      broomH.rotation.z = 0.16;
+      g.add(broomH);
+      const broomHead = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.4, 7), mat(0x7a6a44));
+      broomHead.position.set(1.24, 0.2, D / 2 + 0.22);
+      broomHead.rotation.z = 0.16;
+      g.add(broomHead);
+    }
     // inside: plank floor, bunk, the letter table, and the stove Elliott kept feeding
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.5, 0.1, D - 0.5), plankM);
-    floor.position.set(0, 0.12, 0);
-    g.add(floor);
+    // a plank floor laid board by board so the seams read — each plank a little
+    // off in tone, none laid quite true, over a dark sub-floor so the gaps between
+    // them fall into shadow instead of glowing
+    const subFloor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.5, 0.1, D - 0.5), mat(0x231b11));
+    subFloor.position.set(0, 0.09, 0);
+    g.add(subFloor);
+    const floorTones = [0x63502f, 0x574326, 0x6b5636, 0x4f3d22, 0x5e4a2b];
+    const nBoards = 13, bwF = (W - 0.62) / nBoards;
+    for (let i = 0; i < nBoards; i++) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(bwF - 0.035, 0.09, D - 0.55),
+        mat(floorTones[i % floorTones.length], { map: barkTex }));
+      plank.position.set(-(W - 0.62) / 2 + bwF * (i + 0.5), 0.14, (i % 3 - 1) * 0.02);
+      plank.rotation.y = (i % 2 ? 1 : -1) * 0.004; // a hair out of parallel, board to board
+      g.add(plank);
+    }
     const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.35, 1.0), logBark2);
     bed.position.set(-2.6, 0.32, -2.2);
     g.add(bed);
@@ -2226,6 +2401,88 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     }
     const cupboard = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.9, 1.2), logBark2);
     cupboard.position.set(4.15, 2.4, -0.9); g.add(cupboard);
+
+    // --- ceiling rafters: hewn tie-beams across the room, with two purlins running
+    // its length, so the roof reads as built and the space feels roofed, not open ---
+    for (const rz of [-3.0, -1.5, 0, 1.5, 3.0]) {
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, W - 0.2, 6), rz % 3 === 0 ? logBark : logBark2);
+      beam.rotation.z = Math.PI / 2;
+      beam.position.set(0, 3.02, rz);
+      g.add(beam);
+    }
+    for (const px of [-2.6, 2.6]) {
+      const purlin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, D - 0.2, 6), logBark2);
+      purlin.rotation.x = Math.PI / 2;
+      purlin.position.set(px, 3.16, 0);
+      g.add(purlin);
+    }
+
+    // --- a warm hearth: a cast-iron pot on the stove, and embers still breathing
+    // behind the stove door, throwing a low orange wash across the planks ---
+    const stovePot = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.24, 10), mat(0x1f1e1b));
+    stovePot.position.set(3.6, 1.07, -2.5); g.add(stovePot);
+    const potLid = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.04, 10), mat(0x2a2825));
+    potLid.position.set(3.6, 1.21, -2.5); g.add(potLid);
+    const emberGlow = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.02),
+      new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.85 }));
+    emberGlow.position.set(3.6, 0.5, -2.09); g.add(emberGlow);
+    const emberLight = new THREE.PointLight(0xff6a24, 0.5, 6, 2);
+    emberLight.position.set(3.35, 0.6, -2.3); g.add(emberLight);
+    window._cabinEmber = emberLight; // let it flicker with the lamps
+
+    // --- bedding: a heavy fur throw folded over the foot of the bed ---
+    const furM = mat(0x4a3a28);
+    const throwF = new THREE.Mesh(jitter(new THREE.BoxGeometry(1.1, 0.16, 1.02), 0.03), furM);
+    throwF.position.set(-1.95, 0.74, -2.2); g.add(throwF);
+
+    // --- a travelling chest at the foot of the bed, lid shut, iron-banded ---
+    const chestBody = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.42, 0.56), mat(0x4a3720, { map: barkTex }));
+    chestBody.position.set(-1.2, 0.33, -3.0); g.add(chestBody);
+    const chestLid = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.14, 0.58), mat(0x3f2f1b, { map: barkTex }));
+    chestLid.position.set(-1.2, 0.6, -3.0); g.add(chestLid);
+    for (const bx of [-0.36, 0.36]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.62, 0.6), mat(0x26241f, { shininess: 20 }));
+      band.position.set(-1.2 + bx, 0.42, -3.0); g.add(band);
+    }
+    const latch = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.04), mat(0x2c2a24, { shininess: 30 }));
+    latch.position.set(-1.2, 0.5, -2.7); g.add(latch);
+
+    // --- a stretched hide pegged to the west wall, the way a trapper cures one ---
+    const hideTex = makeCanvasTex(64, (c, s2) => {
+      c.fillStyle = '#6a543a'; c.fillRect(0, 0, s2, s2);
+      blotches(c, s2, ['#5a462f', '#7a6146', '#4c3a26'], 26, 3, 8, 0.5);
+    });
+    const hide = new THREE.Mesh(new THREE.CircleGeometry(0.8, 9),
+      new THREE.MeshLambertMaterial({ map: hideTex, side: THREE.DoubleSide }));
+    hide.scale.set(1, 1.25, 1);
+    hide.position.set(-4.82, 1.75, -0.3);
+    hide.rotation.y = Math.PI / 2;
+    g.add(hide);
+    for (let k = 0; k < 6; k++) { // the pegs it hangs from
+      const a2 = k / 6 * Math.PI * 2;
+      const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.06, 5), mat(0x2c281f));
+      peg.rotation.z = Math.PI / 2;
+      peg.position.set(-4.86, 1.75 + Math.sin(a2) * 1.0, -0.3 + Math.cos(a2) * 0.8);
+      g.add(peg);
+    }
+
+    // --- bundles of dried herbs hung to cure from the kitchen rafter ---
+    for (let k = 0; k < 3; k++) {
+      const bundle = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.34, 6), mat(k % 2 ? 0x6b6a3a : 0x556138));
+      bundle.position.set(3.0, 2.78, -1.3 + k * 0.5);
+      bundle.rotation.x = Math.PI; // hung tips-down
+      g.add(bundle);
+      const tie = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 4), mat(0x2c281f));
+      tie.position.set(3.0, 2.95, -1.3 + k * 0.5);
+      g.add(tie);
+    }
+
+    // --- a heavy coat left on a peg by the door, as if he'd be back for it ---
+    const coatPeg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 5), mat(0x2c281f));
+    coatPeg.rotation.x = Math.PI / 2;
+    coatPeg.position.set(-3.4, 2.0, 3.5); g.add(coatPeg);
+    const coatHung = new THREE.Mesh(jitter(new THREE.BoxGeometry(0.6, 1.0, 0.22), 0.03), mat(0x3d3f2a));
+    coatHung.position.set(-3.4, 1.45, 3.42); g.add(coatHung);
     // Elliott never left. Face-down between the table and the door, one arm still
     // reaching for it — three long tears raked through the coat and everything under it.
     const bodyG = new THREE.Group();
@@ -3220,6 +3477,8 @@ It knows this cabin now. I stayed too long — it learns a place the longer you 
 
 There is a radio at the top of the fire-watch tower on the great hill, ${compassWord(MAPCFG.hill)} of here, past the river. It still worked two winters ago. Get there, call for help, and be off the ground by dark.
 
+Do not strike out over open ground for it. The only way I trust is the trapper's round — out past his shed, then on to the hill. I have drawn the way as far as his shed on the back of this. Reach the shed first; he kept his own map there, and the rest of the way is marked on it.
+
 If the set is dead, the generator will wake it. It sits at the foot of the hill — follow the power line down from the tower. Take tools. Everything loose walks off out here.
 
 — Elliott James Pluck` };
@@ -3364,15 +3623,18 @@ function makeRouteMap(opts) {
   return c.toDataURL();
 }
 
-/* no map at the wreck any more — the way is handed on one leg at a time:
-   the cabin letter shows the shed; the trapper's map there shows the tower */
+/* no map at the wreck any more. The cabin letter's map only runs as far as the
+   shed — it does NOT give away the tower. That reveal is kept for the trapper's
+   own map, found IN the shed, so the walk out to the shed still has a point. */
 CABIN_LETTER.img = makeRouteMap({
+  river: true,
   spots: [
     { x: CABIN.x, z: CABIN.z, type: 'cabin', label: 'the cabin' },
+    { x: MAPCFG.riverX, z: MAPCFG.bridgeZ, type: 'bridge', label: 'the bridge' },
     { x: SHED.x, z: SHED.z, type: 'shed', label: 'the shed' },
   ],
-  route: [{ x: CABIN.x, z: CABIN.z }, { x: -222, z: 146 }, { x: -231, z: 160 },
-          { x: -215, z: 172 }, { x: -160, z: 170 }, { x: SHED.x, z: SHED.z }],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: 0, z: 8 },
+          { x: MAPCFG.riverX, z: MAPCFG.bridgeZ }, { x: SHED.x, z: SHED.z }],
 });
 const BLIND_NOTE = { title: 'A map, weighted with a shell casing', body:
 `If the cabin has gone wrong, do not go back for anything.
@@ -3426,7 +3688,8 @@ SHED_NOTE.img = makeRouteMap({
     { x: SHED.x, z: SHED.z, type: 'shed', label: 'my shed' },
     { x: 0, z: 3, type: 'wreck', label: '' },
   ],
-  route: [{ x: CABIN.x, z: CABIN.z }, { x: -232, z: 152 }, { x: SHED.x, z: SHED.z }, { x: 7, z: 11 }],
+  route: [{ x: CABIN.x, z: CABIN.z }, { x: 0, z: 8 }, { x: MAPCFG.riverX, z: MAPCFG.bridgeZ },
+          { x: SHED.x, z: SHED.z }, { x: HILL.x, z: HILL.z }],
 });
 function shedRot(px, pz) { // shed local -> world
   const c = Math.cos(SHED_ROT), s = Math.sin(SHED_ROT);
@@ -3575,6 +3838,156 @@ function shedRot(px, pz) { // shed local -> world
     spare.position.set(lx, ly, lz);
     g.add(spare);
   });
+
+  /* --- the interior: a working trapper's shed, dressed the way a man leaves one --- */
+  {
+    const steel = mat(0x9297a0, { shininess: 70 }), rust = mat(0x6f4a2c),
+          brass = mat(0xb2903c, { shininess: 90 }), leather = mat(0x5b4227),
+          tin = mat(0x878d92, { shininess: 40 }), dwood = mat(0x3d2f1d, { map: barkTex }),
+          rope2 = mat(0x8a7a58), whet = mat(0x565049),
+          glassJar = new THREE.MeshPhongMaterial({ color: 0x5f6f52, transparent: true, opacity: 0.5, shininess: 60 }),
+          // the lantern glass, lit — a warm globe to see the place by
+          glassGlow = new THREE.MeshPhongMaterial({ color: 0x241804, emissive: 0xffab46, emissiveIntensity: 1.15, transparent: true, opacity: 0.9, shininess: 40 });
+    const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    const cyl = (rt, rb, h, m, s) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, s || 8), m);
+    const tor = (r, t, m, arc, seg) => new THREE.Mesh(new THREE.TorusGeometry(r, t, seg || 6, 12, arc || Math.PI * 2), m);
+    const put = (mesh, x, y, z, rx, ry, rz) => { mesh.position.set(x, y, z); mesh.rotation.set(rx || 0, ry || 0, rz || 0); g.add(mesh); return mesh; };
+    const sub = (x, y, z, ry, rz) => { const q = new THREE.Group(); q.position.set(x, y, z); q.rotation.set(0, ry || 0, rz || 0); g.add(q); return q; };
+    const add2 = (q, mesh, x, y, z, rx, ry, rz) => { mesh.position.set(x || 0, y || 0, z || 0); mesh.rotation.set(rx || 0, ry || 0, rz || 0); q.add(mesh); return mesh; };
+    const FL = 0.09; // the plank floor's top face
+
+    // the workbench, run the length of the back wall
+    put(box(2.4, 0.08, 0.72, plankM), 1.15, 0.86, -1.6);
+    put(box(2.4, 0.14, 0.05, logB), 1.15, 0.73, -1.28);      // front apron
+    put(box(2.4, 0.14, 0.05, logB), 1.15, 0.73, -1.92);      // back apron
+    for (const lx of [0.05, 2.25]) for (const lz of [-1.32, -1.9]) put(box(0.1, 0.77, 0.1, logB), lx, 0.47, lz);
+
+    // a hand saw left flat across the bench
+    { const s = sub(0.5, 0.915, -1.5, 0.55);
+      add2(s, box(0.6, 0.004, 0.11, steel));                 // blade
+      add2(s, box(0.6, 0.012, 0.012, steel), 0, 0.006, 0.05);// stiffened back
+      add2(s, box(0.62, 0.02, 0.012, rust), 0, -0.004, -0.055); // the toothed, rust-flecked edge
+      add2(s, box(0.15, 0.12, 0.032, dwood), 0.36, 0.006, 0);// handle plate
+      add2(s, tor(0.04, 0.016, dwood, Math.PI * 2, 8), 0.4, 0.006, 0, Math.PI / 2); // the grip hole
+      for (const bz of [-0.03, 0.03]) add2(s, cyl(0.008, 0.008, 0.035, brass, 6), 0.31, 0.006, bz, Math.PI / 2);
+    }
+    // a claw hammer beside it
+    { const h = sub(1.4, 0.915, -1.55, 0.3);
+      add2(h, box(0.11, 0.055, 0.05, iron), 0, 0.025, 0);    // head
+      add2(h, box(0.03, 0.06, 0.05, iron), -0.075, 0.02, 0); // the claw
+      add2(h, cyl(0.016, 0.02, 0.34, dwood, 6), 0.22, 0.01, 0, 0, 0, Math.PI / 2); // helve
+    }
+    // the lantern — lit, sitting at the bench's end, throwing the only real light
+    { const l = sub(1.98, 0.90, -1.7, 0.2);
+      add2(l, cyl(0.085, 0.095, 0.03, iron, 10), 0, 0.015, 0);   // font base
+      add2(l, cyl(0.06, 0.075, 0.06, brass, 10), 0, 0.06, 0);    // fuel font
+      add2(l, cyl(0.055, 0.055, 0.15, glassGlow, 10), 0, 0.165, 0); // the glass globe
+      for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2; add2(l, box(0.008, 0.16, 0.008, iron), Math.cos(a) * 0.052, 0.165, Math.sin(a) * 0.052); } // wire guards
+      add2(l, cyl(0.02, 0.075, 0.06, iron, 10), 0, 0.27, 0);     // vented crown
+      add2(l, cyl(0.03, 0.02, 0.03, iron, 8), 0, 0.31, 0);       // chimney cap
+      add2(l, tor(0.06, 0.008, iron, Math.PI, 6), 0, 0.30, 0, 0, Math.PI / 2); // the bail
+      const lamp = new THREE.PointLight(0xffb14e, 1.5, 8, 2); lamp.position.set(0, 0.17, 0); l.add(lamp);
+    }
+    // a bench vise clamped over the front edge
+    { const v = sub(0.2, 0.90, -1.3, 0);
+      add2(v, box(0.12, 0.16, 0.13, rust), 0, 0.05, 0.02);
+      add2(v, box(0.15, 0.11, 0.03, steel), 0, 0.11, 0.09);
+      add2(v, box(0.15, 0.11, 0.03, steel), 0, 0.11, 0.15);
+      add2(v, cyl(0.012, 0.012, 0.24, steel, 6), 0, 0.11, 0.12, Math.PI / 2);
+      add2(v, cyl(0.022, 0.022, 0.04, steel, 6), 0.12, 0.11, 0.12, 0, 0, Math.PI / 2);
+    }
+    // a tin of nails, a whetstone, and a scatter of shavings on the boards
+    put(cyl(0.05, 0.045, 0.07, tin, 10), 1.65, 0.94, -1.88);
+    for (let i = 0; i < 5; i++) { const a = i * 1.3; put(cyl(0.004, 0.004, 0.09, steel, 4), 1.65 + Math.cos(a) * 0.02, 0.99, -1.88 + Math.sin(a) * 0.02, Math.cos(a) * 0.25, 0, Math.sin(a) * 0.25); }
+    put(box(0.16, 0.03, 0.06, whet), 0.95, 0.915, -1.86, 0, 0.3, 0);
+    for (let i = 0; i < 4; i++) put(tor(0.03, 0.008, mat(0xcaa96a), Math.PI, 5), 0.72 + i * 0.12, 0.92, -1.38 + (i % 2) * 0.08, Math.PI / 2, i, 0);
+
+    // a sawhorse mid-floor with a half-cut log across it and a heap of sawdust below
+    put(box(1.3, 0.09, 0.11, logB), 0.0, 0.62, -0.5);
+    for (const dx of [-0.5, 0.5]) for (const dz of [-0.16, 0.16]) put(cyl(0.038, 0.05, 0.68, logB, 6), dx, 0.30, -0.5 + dz, dz > 0 ? 0.2 : -0.2, 0, dx > 0 ? -0.2 : 0.2);
+    put(cyl(0.11, 0.115, 0.95, logA, 8), 0.05, 0.73, -0.5, 0, 0, Math.PI / 2);   // the log being sawn
+    put(box(0.03, 0.16, 0.16, mat(0x1c150c)), 0.34, 0.73, -0.5);                 // the fresh kerf
+    put(cyl(0.3, 0.34, 0.05, mat(0xbfa871), 12), 0.2, FL + 0.02, -0.5);          // sawdust
+
+    // a chopping block by the door, an axe buried in it, split billets stacked alongside
+    put(cyl(0.26, 0.29, 0.5, logA, 12), 2.0, FL + 0.25, 0.7);
+    { const ax = sub(2.0, FL + 0.5, 0.7, 0.6, 0.35);
+      add2(ax, box(0.13, 0.09, 0.035, steel), 0, 0.02, 0);
+      add2(ax, box(0.05, 0.11, 0.03, steel), -0.07, 0.02, 0);
+      add2(ax, cyl(0.02, 0.024, 0.55, dwood, 6), 0.02, 0.28, 0, 0, 0, -0.12);    // the helve, standing up
+    }
+    for (let i = 0; i < 4; i++) put(cyl(0.07, 0.08, 0.42, i % 2 ? logA : logB, 6), 2.35 + (i % 2) * 0.16, FL + 0.08 + Math.floor(i / 2) * 0.15, 1.2 - (i % 2) * 0.2, Math.PI / 2, i, 0);
+
+    // a three-legged stool pulled up to the bench
+    { const st = sub(0.55, 0, -0.95, 0);
+      add2(st, cyl(0.17, 0.18, 0.05, plankM, 12), 0, 0.5, 0);
+      for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + 0.5; add2(st, cyl(0.022, 0.028, 0.5, logB, 6), Math.cos(a) * 0.12, 0.25, Math.sin(a) * 0.12, Math.cos(a) * 0.12, 0, -Math.sin(a) * 0.12); }
+    }
+
+    // the right wall, hung with the tools of the round
+    put(box(0.05, 0.1, 2.8, logB), 2.53, 1.75, 0);                               // the peg batten
+    put(tor(0.15, 0.045, rope2, Math.PI * 2, 8), 2.42, 1.5, -1.2, 0, Math.PI / 2, 0); // a coil of rope
+    { const hx = sub(2.44, 1.5, -0.45, 0);                                       // a hatchet by its head
+      add2(hx, box(0.11, 0.075, 0.03, steel), 0, 0, 0, 0, Math.PI / 2);
+      add2(hx, cyl(0.017, 0.02, 0.32, dwood, 6), 0, -0.19, 0);
+    }
+    { const tp = sub(2.45, 1.45, 0.4, 0);                                        // a leg-hold trap and its chain
+      add2(tp, tor(0.1, 0.02, rust, Math.PI * 2, 6), 0, 0, 0, 0, Math.PI / 2);
+      add2(tp, tor(0.1, 0.012, rust, Math.PI, 6), 0, 0, 0.02, 0, Math.PI / 2);
+      for (let i = 0; i < 4; i++) add2(tp, tor(0.02, 0.007, iron, Math.PI * 2, 5), 0, -0.12 - i * 0.045, 0, i % 2 ? 0 : Math.PI / 2, Math.PI / 2, 0);
+    }
+    { const bs = sub(2.42, 1.6, 1.25, 0);                                        // a bow saw
+      add2(bs, tor(0.26, 0.018, dwood, Math.PI, 6), 0, 0, 0, 0, Math.PI / 2, 0);
+      add2(bs, box(0.004, 0.5, 0.02, steel), 0, -0.05, 0, 0, 0, Math.PI / 2);
+    }
+    { const sn = sub(2.46, 1.15, -1.7, 0);                                       // a pair of snowshoes
+      for (const o of [-0.06, 0.06]) { const f = tor(0.14, 0.02, dwood, Math.PI * 2, 6); f.scale.set(0.7, 1.5, 1); add2(sn, f, 0, 0, o, 0, Math.PI / 2, 0); }
+    }
+
+    // a hide stretched to dry on the back wall, above the bench
+    { const p = sub(1.2, 1.85, -2.0, 0);
+      add2(p, box(0.92, 1.05, 0.02, leather));
+      for (const [ex, ey] of [[-0.46, 0], [0.46, 0], [0, 0.52], [0, -0.52]]) add2(p, cyl(0.015, 0.015, ex ? 1.05 : 0.92, dwood, 5), ex, ey, 0.02, 0, 0, ex ? 0 : Math.PI / 2);
+    }
+    put(box(0.02, 0.7, 0.5, mat(0x6b4a2c)), -2.55, 1.4, 0.6);                     // a smaller pelt on the left wall
+
+    // a shelf of jars and tins along the left wall
+    put(box(0.32, 0.035, 1.8, plankM), -2.4, 1.5, -0.3);
+    for (const bz of [-1.05, 0.45]) put(box(0.28, 0.22, 0.04, logB), -2.4, 1.4, bz);
+    let jz = -1.0;
+    for (const [jr, jh, jm] of [[0.05, 0.13, glassJar], [0.045, 0.1, tin], [0.05, 0.14, glassJar], [0.042, 0.09, tin], [0.048, 0.12, glassJar]]) {
+      put(cyl(jr, jr, jh, jm, 10), -2.38, 1.52 + jh / 2, jz);
+      put(cyl(jr * 0.9, jr, 0.02, iron, 10), -2.38, 1.52 + jh + 0.01, jz);
+      jz += 0.28;
+    }
+    for (let i = 0; i < 3; i++) put(tor(0.09, 0.018, rust, Math.PI * 2, 6), -2.36, 1.55 + i * 0.05, 0.62, Math.PI / 2, 0, 0); // a stack of spare traps
+    { const o = sub(0.4, FL, -1.86, 0.5);                                        // an oil can under the bench
+      add2(o, cyl(0.08, 0.09, 0.16, tin, 10), 0, 0.08, 0);
+      add2(o, cyl(0.015, 0.015, 0.16, tin, 6), 0.05, 0.2, 0, 0, 0, -0.6);
+    }
+
+    // a broom, a water bucket, and cordwood cross-stacked in the near corner
+    { const b = sub(-2.25, 0.9, 1.75, 0, 0.22);
+      add2(b, cyl(0.02, 0.022, 1.5, dwood, 6));
+      add2(b, cyl(0.09, 0.05, 0.26, mat(0xa5894e), 8), 0, -0.85, 0);
+    }
+    { const bk = sub(-2.3, FL, 1.5, 0);
+      add2(bk, cyl(0.16, 0.13, 0.3, plankM, 12), 0, 0.15, 0);
+      add2(bk, tor(0.16, 0.012, iron, Math.PI * 2, 6), 0, 0.27, 0, Math.PI / 2, 0, 0);
+      add2(bk, tor(0.145, 0.01, iron, Math.PI * 2, 6), 0, 0.05, 0, Math.PI / 2, 0, 0);
+    }
+    for (let r = 0; r < 3; r++) for (let i = 0; i < 3; i++) {
+      const log = cyl(0.06, 0.07, 0.62, (r + i) % 2 ? logA : logB, 6), y = FL + 0.08 + r * 0.13;
+      if (r % 2 === 0) put(log, -2.05, y, 0.8 + i * 0.16, 0, 0, Math.PI / 2);     // a course running along the wall
+      else put(log, -2.3 + i * 0.16, y, 1.0, Math.PI / 2, 0, 0);                  // the crossed course
+    }
+
+    // interior clutter blocks the player the way real furniture does
+    for (const [lx, lz, r] of [[0.4, -1.6, 0.55], [1.9, -1.6, 0.55], [0.0, -0.5, 0.7], [2.0, 0.7, 0.35], [0.55, -0.95, 0.25], [-2.1, 1.2, 0.35]]) {
+      const w = shedRot(lx, lz); addCollider(w.x, w.z, r);
+    }
+  }
+
   enableShadows(g);
   scene.add(g);
   addInteractable(roll, 'note', 'Take the map from the box', 'shed-map', { note: SHED_NOTE, onRead: () => {
@@ -3616,22 +4029,85 @@ const keyRock = Object.assign({ searched: false }, cabRot(3.0, 6.2));
   const da = cabRot(-0.85, 3.75), db = cabRot(0.85, 3.75);
   cabinDoor.seg = { x1: da.x, z1: da.z, x2: db.x, z2: db.z, open: false };
   wallSegs.push(cabinDoor.seg);
-  // the door itself — heavy, old, locked, boarded with cross battens
+  // the door itself — heavy, old, locked: a batten-and-ledge door of six warped
+  // vertical boards, Z-braced, hung on hand-forged iron straps, studded with
+  // rosehead nails, a rust-pitted lock plate and a ring pull. The whole group
+  // hinges on its left edge (local x≈0), so it can still swing open when unlocked.
   const dg = new THREE.Group();
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2.55, 0.09), mat(0x5a4228, { map: barkTex }));
-  panel.position.set(0.85, 1.28, 0);
-  dg.add(panel);
-  for (const hy of [0.6, 1.95]) {
-    const bat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.05), mat(0x41321f));
-    bat.position.set(0.85, hy, 0.07);
-    dg.add(bat);
-    const hinge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.03), mat(0x3a352c));
-    hinge.position.set(0.3, hy, 0.1);
-    dg.add(hinge);
+  const doorTones = [0x5a4228, 0x513a24, 0x60482c, 0x4c3720, 0x574026, 0x523d26];
+  const ironM = mat(0x2b2824), ironRust = mat(0x4a3524), boltM = mat(0x3a352c);
+  const DW = 1.66, DH = 2.55, x0 = 0.03; // door spans local x0..x0+DW, hinge near x=0
+  // a thin dark backing so the seams between boards fall into shadow, not daylight
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(DW + 0.02, DH, 0.04), mat(0x14100a));
+  backing.position.set(x0 + DW / 2, 1.28, -0.02);
+  dg.add(backing);
+  // six vertical boards, each a hair different in tone and set a touch proud/shy,
+  // a couple canted so the door reads warped and hand-hewn
+  const nB = 6, bw = DW / nB;
+  for (let i = 0; i < nB; i++) {
+    const warp = (i % 2 ? 1 : -1) * 0.006;
+    const board = new THREE.Mesh(new THREE.BoxGeometry(bw - 0.02, DH, 0.08 + (i % 3) * 0.006),
+      mat(doorTones[i % doorTones.length], { map: barkTex }));
+    board.position.set(x0 + bw * (i + 0.5), 1.28, (i % 3 - 1) * 0.008);
+    board.rotation.z = warp; // a slight lean, board to board
+    dg.add(board);
   }
-  const knob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), mat(0x3a352c));
-  knob.position.set(1.5, 1.28, 0.11);
-  dg.add(knob);
+  // Z-brace: two ledges top and bottom, one diagonal running between them
+  const braceM = mat(0x41321f, { map: barkTex });
+  for (const by of [0.52, 2.02]) {
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(DW - 0.06, 0.19, 0.05), braceM);
+    ledge.position.set(x0 + DW / 2, by, 0.075);
+    dg.add(ledge);
+  }
+  const diag = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.17, 0.045), braceM);
+  diag.position.set(x0 + DW / 2, 1.27, 0.075);
+  diag.rotation.z = Math.atan2(2.02 - 0.52, DW - 0.3); // corner to corner across the ledges
+  dg.add(diag);
+  // hand-forged strap hinges reaching in from the hinge stile, spreading to points
+  for (const hy of [0.55, 1.99]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.11, 0.03), ironM);
+    strap.position.set(0.42, hy, 0.12);
+    dg.add(strap);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.22, 4), ironM);
+    tip.rotation.z = -Math.PI / 2;
+    tip.position.set(0.83, hy, 0.12); // arrow point at the strap's far end
+    dg.add(tip);
+    // the pintle knuckle at the jamb end
+    const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.16, 6), ironM);
+    knuckle.position.set(0.04, hy, 0.11);
+    dg.add(knuckle);
+  }
+  // rows of rosehead nail studs down the ledges, straps and diagonal
+  const studAt = (sx, sy) => {
+    const s = new THREE.Mesh(new THREE.IcosahedronGeometry(0.028, 0), boltM);
+    s.position.set(sx, sy, 0.13);
+    dg.add(s);
+  };
+  for (const by of [0.52, 2.02]) for (let k = 0; k < 6; k++) studAt(x0 + 0.15 + k * (DW - 0.3) / 5, by);
+  for (const hy of [0.55, 1.99]) for (let k = 0; k < 3; k++) studAt(0.2 + k * 0.28, hy);
+  for (let k = 0; k < 5; k++) studAt(x0 + 0.25 + k * 0.28, 0.52 + (k + 0.5) * 0.28);
+  // rust-pitted lock plate on the latch stile, with a keyhole and a ring pull
+  const lockPlate = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.44, 0.03), ironRust);
+  lockPlate.position.set(1.46, 1.24, 0.11);
+  dg.add(lockPlate);
+  const keyholeR = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.04, 6), mat(0x0a0806));
+  keyholeR.rotation.x = Math.PI / 2;
+  keyholeR.position.set(1.46, 1.26, 0.13);
+  dg.add(keyholeR);
+  const keyholeSlot = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.04), mat(0x0a0806));
+  keyholeSlot.position.set(1.46, 1.21, 0.13);
+  dg.add(keyholeSlot);
+  const ringBoss = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 8), ironM);
+  ringBoss.rotation.x = Math.PI / 2;
+  ringBoss.position.set(1.44, 1.5, 0.12);
+  dg.add(ringBoss);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.022, 6, 12), ironM);
+  ring.position.set(1.44, 1.44, 0.14);
+  dg.add(ring);
+  // an iron kick-plate scuffed along the bottom rail
+  const kick = new THREE.Mesh(new THREE.BoxGeometry(DW - 0.1, 0.16, 0.03), ironRust);
+  kick.position.set(x0 + DW / 2, 0.16, 0.075);
+  dg.add(kick);
   const hp = cabRot(-0.85, 3.75);
   dg.position.set(hp.x, groundY(hp.x, hp.z), hp.z);
   dg.rotation.y = 0.5;
@@ -3639,12 +4115,36 @@ const keyRock = Object.assign({ searched: false }, cabRot(3.0, 6.2));
   scene.add(dg);
   cabinDoor.mesh = dg;
 
-  // the pale stone by the porch, sitting a little wrong
-  const kr = new THREE.Mesh(new THREE.DodecahedronGeometry(0.38), mat(0xa8a498));
-  kr.position.set(keyRock.x, groundY(keyRock.x, keyRock.z) + 0.16, keyRock.z);
-  kr.rotation.set(0.4, 1.1, 0);
-  kr.castShadow = true;
-  scene.add(kr);
+  // the pale stone by the porch, sitting a little wrong — a single blunt granite
+  // boulder with clean angular facets, part-sunk and tipped so one flat face lifts;
+  // flat-shaded so the faces catch the light and read as cut rock, not a lump
+  {
+    const krG = new THREE.Group();
+    const g1 = mat(0x9c988a), g2 = mat(0x8c8779);
+    // the boulder: low-poly, only lightly knocked about so the facets stay crisp,
+    // squashed and tipped so it sits like a rock instead of a ball
+    const rock = new THREE.Mesh(jitter(new THREE.IcosahedronGeometry(0.5, 0), 0.055), g1);
+    rock.scale.set(1.0, 0.66, 0.86);
+    rock.rotation.set(0.2, 0.9, 0.14); // tipped a little — the tell it's been lifted
+    rock.castShadow = true;
+    krG.add(rock);
+    // one smaller stone leaned against its base, so it doesn't sit alone
+    const rock2 = new THREE.Mesh(jitter(new THREE.IcosahedronGeometry(0.2, 0), 0.045), g2);
+    rock2.position.set(0.44, -0.05, 0.24);
+    rock2.scale.set(1, 0.8, 1);
+    rock2.rotation.set(0.5, 1.4, 0.3);
+    rock2.castShadow = true;
+    krG.add(rock2);
+    // a thin skin of moss on the shaded foot
+    for (const [mx, mz] of [[-0.22, -0.16], [0.1, 0.26]]) {
+      const moss = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), mat(0x5c6a3c));
+      moss.position.set(mx, -0.12, mz);
+      moss.scale.set(0.2, 0.05, 0.16);
+      krG.add(moss);
+    }
+    krG.position.set(keyRock.x, groundY(keyRock.x, keyRock.z) + 0.16, keyRock.z);
+    scene.add(krG);
+  }
 
   // on the table, beside the lamp — anchored to the cabin's own base height, not the
   // terrain under it, so the slope can't sink it into the tabletop
@@ -3659,7 +4159,7 @@ const keyRock = Object.assign({ searched: false }, cabRot(3.0, 6.2));
       state.quest = 6;
       toast(state.shedMapRead
         ? `A watch tower, on the great hill. ${compassWord(HILL)[0].toUpperCase() + compassWord(HILL).slice(1)}.`
-        : 'He kept a shed out in the trees. The path from the porch leads to it.');
+        : 'He kept a shed across the river. Cross the bridge to reach it.');
     }
     // it heard you find it. Two seconds of quiet — then it runs the length of the
     // cabin wall and hits it, once, hard. Seven seconds you will not forget.
@@ -6625,22 +7125,26 @@ function objectiveText() {
   switch (state.quest) {
     case 0: txt = 'Search the luggage for the notes.'; break;
     case 1: txt = `Search the luggage for the notes — ${state.pieces}/5.`; break;
-    case 2: txt = `Follow the path to the cabin, ${compassWord(CABIN)} (${dist(CABIN)}).`; break;
+    case 2: txt = Math.hypot(state.pos.x - CABIN.x, state.pos.z - CABIN.z) <= 10
+      ? 'Enter the cabin.'
+      : `Follow the path to the cabin, ${compassWord(CABIN)} (${dist(CABIN)}).`; break;
     case 3: txt = 'The cabin is locked. One pale stone by the porch sits wrong — look under it.'; break;
     case 4: txt = 'Unlock the cabin door with the key.'; break;
     case 5: txt = 'Someone is inside the cabin. Read the letter.'; break;
     case 6: {
-      // stepping onto the broken bridge takes over the objective until it's mended
+      // the shed is across the river now, so the walk to it crosses the bridge —
+      // and trying to cross takes over the objective until the bridge is mended
       if (!bridgeGap.fixed && (onBridge(state.pos.x, state.pos.z) ||
           Math.hypot(state.pos.x - bridgeGap.x, state.pos.z - BRIDGE.z) < 4)) state.sawGap = true;
       if (state.sawGap && !bridgeGap.fixed)
         txt = has({ Plank: 1 })
           ? `Lay the plank and fix the bridge (${dist({ x: bridgeGap.x, z: BRIDGE.z })}).`
           : 'Find the missing wood plank and fix the bridge.';
-      else if (state.shedMapRead || state.sawGap)
-        txt = `Reach the watch tower on the great hill, ${compassWord(HILL)} (${dist(HILL)}).`;
+      else if (state.shedMapRead)
+        txt = `Follow the path to the watch tower on the great hill, ${compassWord(HILL)} (${dist(HILL)}).`;
       else
-        txt = `Follow the path from the cabin to the shed (${dist(SHED)}).`;
+        // whether or not the bridge is behind you now, the shed still comes first
+        txt = `Follow the path to the shed (${dist(SHED)}).`;
       break;
     }
     case 7: {
@@ -7018,6 +7522,8 @@ function frame(now) {
       window._cabinLampGlass[i].material.opacity = 0.45 + v * 0.8;
     }
   }
+  if (window._cabinEmber) // embers pulse slower and deeper than the lamps
+    window._cabinEmber.intensity = 0.42 + Math.sin(now * 0.004) * 0.12 + Math.random() * 0.06;
 
   animateFires(now, dt);
 
