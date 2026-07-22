@@ -133,16 +133,25 @@ const SHED_ROT = Math.atan2((RIVER_X + 14) - SHED.x, MAPCFG.bridgeZ - SHED.z);
 const TRAIL_A = { x: -15, z: 6 };   // the cabin path's mouth, on the west treeline
 const TRAIL_B = cabRot(0, 6.5);
 const TRAIL_LEN = Math.hypot(TRAIL_B.x - TRAIL_A.x, TRAIL_B.z - TRAIL_A.z);
+const CABIN_MOUTH = { x: -11, z: 5.5 }; // where the cabin path meets the crash clearing; kept clear of trees
 const TRAIL_LEGS = [
+  // a short connector carries the cabin path right into the crash clearing (up to
+  // the wreck) so it no longer just stops dead at the treeline — you can see where
+  // it leaves the crash site
+  { a: { x: -4, z: 5 }, b: TRAIL_A },
   { a: TRAIL_A, b: TRAIL_B },                                                  // crash (west edge) -> cabin porch
   // the bridge path leaves the EAST edge of the clearing, in two legs so the
   // last stretch arrives square-on to the bridge instead of climbing the bank
   { a: { x: 13, z: -3 }, b: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 } },
   { a: { x: MAPCFG.riverX - 38, z: MAPCFG.bridgeZ - 7 }, b: { x: MAPCFG.riverX - 14, z: MAPCFG.bridgeZ } },
-  // once you cross the bridge a single worn path runs on to the shed — there is
-  // no separate trail to the watch tower; the walk over the far bank leads only
-  // to the shed, and no shed path comes near the crash clearing or the cabin walk.
-  { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ }, b: SHED },
+  // once you cross the bridge there is ONE worn path — no separate trail to the
+  // tower. It runs to the shed, then carries on FROM the shed, turns left, and
+  // sweeps out east and up north to the watch tower, giving the generator and its
+  // scattered parts a wide berth (30m+ of screening trees) so you never sight them.
+  { a: { x: MAPCFG.riverX + 14, z: MAPCFG.bridgeZ }, b: SHED },   // bridge -> shed
+  { a: SHED, b: { x: 150, z: 112 } },                            // on past the shed, turning left (due east)
+  { a: { x: 150, z: 112 }, b: { x: 156, z: 6 } },                // climb north, well east of the generator + parts
+  { a: { x: 156, z: 6 }, b: { x: HILL.x - 4, z: HILL.z + 8 } },  // in to the watch tower
 ];
 function legNear(L, x, z, margin) {
   const dx = L.b.x - L.a.x, dz = L.b.z - L.a.z, len = Math.hypot(dx, dz);
@@ -1050,6 +1059,7 @@ function placeOK(x, z, clearCrash = true) {
   for (const k of ['camp', 'snare', 'cairn'])
     if (Math.hypot(x - SCENE_SPOTS[k].x, z - SCENE_SPOTS[k].z) < 5) return false;
   if (nearTrail(x, z, 2.8)) return false; // nothing grows on the walked path
+  if (Math.hypot(x - CABIN_MOUTH.x, z - CABIN_MOUTH.z) < 5.5) return false; // clear the cabin path's mouth
   for (const c of MAP_CLEARINGS) if (Math.hypot(x - c.x, z - c.z) < 16) return false;
   return true;
 }
@@ -1096,6 +1106,7 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     if (nearWater(p.x, p.z)) continue;
     if (Math.hypot(p.x - FIRE.x, p.z - FIRE.z) < 8) continue;
     if (nearTrail(p.x, p.z, 2.8)) continue; // the stand parts where the path leaves the clearing
+    if (Math.hypot(p.x - CABIN_MOUTH.x, p.z - CABIN_MOUTH.z) < 5.5) continue; // open the cabin path's mouth
     pines.push(p);
     treeData.push({ x: p.x, z: p.z, harvests: 3 });
   }
@@ -2133,34 +2144,103 @@ function setInst(mesh, i, x, y, z, rx, ry, rz, sx, sy, sz, color) {
     // a plank floor laid board by board so the seams read — each plank a little
     // off in tone, none laid quite true, over a dark sub-floor so the gaps between
     // them fall into shadow instead of glowing
-    const subFloor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.5, 0.1, D - 0.5), mat(0x231b11));
+    const subFloor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.5, 0.1, D - 0.5), mat(0x1c1610));
     subFloor.position.set(0, 0.09, 0);
     g.add(subFloor);
-    const floorTones = [0x63502f, 0x574326, 0x6b5636, 0x4f3d22, 0x5e4a2b];
-    const nBoards = 13, bwF = (W - 0.62) / nBoards;
+    // a real sawn-board floor: lengthwise wood grain, staggered butt-joints, iron
+    // nail heads at the ends, each board a little off in tone and not laid quite true
+    const floorTex = makeCanvasTex(128, (c, s) => {
+      c.fillStyle = '#5c4829'; c.fillRect(0, 0, s, s);
+      for (let i = 0; i < 80; i++) { // grain running the length of the board
+        c.strokeStyle = `rgba(${38 + Math.random() * 44 | 0},${28 + Math.random() * 30 | 0},${14 + Math.random() * 18 | 0},${(0.18 + Math.random() * 0.34).toFixed(2)})`;
+        c.lineWidth = 0.4 + Math.random() * 1.6;
+        let x0 = Math.random() * s;
+        c.beginPath(); c.moveTo(x0, 0);
+        for (let y = 0; y <= s; y += 7) { x0 += (Math.random() - 0.5) * 3; c.lineTo(x0, y); }
+        c.stroke();
+      }
+      for (let i = 0; i < 3; i++) { // the odd knot
+        const kx = Math.random() * s, ky = Math.random() * s;
+        c.fillStyle = 'rgba(26,17,8,.55)';
+        c.beginPath(); c.ellipse(kx, ky, 1.5 + Math.random() * 2.5, 3 + Math.random() * 4, 0, 0, 7); c.fill();
+        c.strokeStyle = 'rgba(26,17,8,.3)'; c.lineWidth = 1;
+        c.beginPath(); c.ellipse(kx, ky, 4 + Math.random() * 3, 7 + Math.random() * 4, 0, 0, 7); c.stroke();
+      }
+    }, 1, 3);
+    const floorTones = [0x6b5636, 0x5e4a2b, 0x74603c, 0x574326, 0x655032];
+    const floorM = floorTones.map(t => mat(t, { map: floorTex }));
+    const nailM = mat(0x2b2620, { shininess: 15 });
+    const nBoards = 13, bwF = (W - 0.62) / nBoards, FLZ = D - 0.55;
     for (let i = 0; i < nBoards; i++) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(bwF - 0.035, 0.09, D - 0.55),
-        mat(floorTones[i % floorTones.length], { map: barkTex }));
-      plank.position.set(-(W - 0.62) / 2 + bwF * (i + 0.5), 0.14, (i % 3 - 1) * 0.02);
-      plank.rotation.y = (i % 2 ? 1 : -1) * 0.004; // a hair out of parallel, board to board
-      g.add(plank);
+      const px = -(W - 0.62) / 2 + bwF * (i + 0.5);
+      const split = (0.4 + (i % 3) * 0.11) * FLZ; // the butt-joint walks board to board
+      const segs = [[-FLZ / 2, -FLZ / 2 + split - 0.015], [-FLZ / 2 + split + 0.015, FLZ / 2]];
+      segs.forEach(([za, zb], si) => {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(bwF - 0.03, 0.09, zb - za), floorM[(i + si) % floorM.length]);
+        plank.position.set(px, 0.14, (za + zb) / 2);
+        plank.rotation.y = (i % 2 ? 1 : -1) * 0.003; // a hair out of parallel, board to board
+        g.add(plank);
+        for (const nz of [za + 0.06, zb - 0.06]) { // two nail heads set at each board end
+          for (const nx of [-bwF * 0.28, bwF * 0.28]) {
+            const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.02, 5), nailM);
+            nail.position.set(px + nx, 0.185, nz);
+            g.add(nail);
+          }
+        }
+      });
     }
-    const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.35, 1.0), logBark2);
-    bed.position.set(-2.6, 0.32, -2.2);
-    g.add(bed);
-    const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.2, 0.9), mat(0x8a8272));
-    mattress.position.set(-2.6, 0.6, -2.2);
-    g.add(mattress);
-    // a proper bed: headboard, blanket turned down, a pillow still dented
-    const headboard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.95, 1.05), logBark);
-    headboard.position.set(-3.62, 0.75, -2.2);
-    g.add(headboard);
-    const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.1, 0.94), mat(0x4a5240));
-    blanket.position.set(-2.25, 0.72, -2.2);
-    g.add(blanket);
-    const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.62), mat(0xa89d85));
-    pillow.position.set(-3.3, 0.74, -2.2);
-    g.add(pillow);
+    // --- the bed: a hewn-timber frame with turned posts, a sagging mattress, a
+    //     quilt thrown back and spilling to the floor, and a dented pillow —
+    //     Elliott's bunk, left unmade. Head to the west wall (-x). ---
+    {
+      const bedG = new THREE.Group();
+      const bx = -2.6, bz = -2.2, BL = 2.05, BW = 1.0;
+      const frameM = mat(0x4a3a26, { map: barkTex }), postM = mat(0x40311f, { map: barkTex });
+      // four corner posts, taller at the head, each capped with a turned knob
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const h = sx < 0 ? 0.98 : 0.6;
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.075, h, 7), postM);
+        post.position.set(bx + sx * BL / 2, h / 2, bz + sz * BW / 2);
+        bedG.add(post);
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.078, 8, 6), postM);
+        knob.position.set(bx + sx * BL / 2, h + 0.02, bz + sz * BW / 2);
+        bedG.add(knob);
+      }
+      // side and end rails
+      for (const sz of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(BL, 0.13, 0.06), frameM);
+        rail.position.set(bx, 0.42, bz + sz * BW / 2); bedG.add(rail);
+      }
+      for (const sx of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.13, BW), frameM);
+        rail.position.set(bx + sx * BL / 2, 0.42, bz); bedG.add(rail);
+      }
+      // headboard planks between the head posts
+      for (const hy of [0.66, 0.83]) {
+        const hb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, BW - 0.02), frameM);
+        hb.position.set(bx - BL / 2, hy, bz); bedG.add(hb);
+      }
+      // slat base under the mattress
+      const base = new THREE.Mesh(new THREE.BoxGeometry(BL - 0.1, 0.05, BW - 0.1), mat(0x2c2419));
+      base.position.set(bx, 0.47, bz); bedG.add(base);
+      // the mattress — thick, sagging where he slept
+      const mattress = new THREE.Mesh(jitter(new THREE.BoxGeometry(BL - 0.14, 0.2, BW - 0.12, 5, 1, 3), 0.022), mat(0x9a9382));
+      mattress.position.set(bx, 0.58, bz); bedG.add(mattress);
+      // a rumpled quilt thrown back over the foot half, with a turned-down fold and
+      // a corner spilling off the side to the floor
+      const quiltM = mat(0x5a4636, { map: barkTex });
+      const quilt = new THREE.Mesh(jitter(new THREE.BoxGeometry(BL * 0.6, 0.15, BW + 0.06, 5, 1, 3), 0.04), quiltM);
+      quilt.position.set(bx + 0.44, 0.67, bz); bedG.add(quilt);
+      const fold = new THREE.Mesh(jitter(new THREE.BoxGeometry(0.3, 0.1, BW + 0.04, 3, 1, 2), 0.03), mat(0x6d5a45));
+      fold.position.set(bx + 0.02, 0.71, bz); bedG.add(fold);
+      const drape = new THREE.Mesh(jitter(new THREE.BoxGeometry(BL * 0.46, 0.34, 0.06, 4, 2, 1), 0.035), quiltM);
+      drape.position.set(bx + 0.42, 0.4, bz + BW / 2 + 0.02); bedG.add(drape);
+      // a dented pillow at the head
+      const pillow = new THREE.Mesh(jitter(new THREE.BoxGeometry(0.52, 0.17, 0.66, 3, 2, 3), 0.035), mat(0xb3a892));
+      pillow.position.set(bx - BL / 2 + 0.36, 0.71, bz);
+      pillow.rotation.y = 0.12; bedG.add(pillow);
+      g.add(bedG);
+    }
     const table = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 0.9), plankM);
     table.position.set(1.6, 0.78, -1.5);
     g.add(table);
@@ -4115,34 +4195,49 @@ const keyRock = Object.assign({ searched: false }, cabRot(3.0, 6.2));
   scene.add(dg);
   cabinDoor.mesh = dg;
 
-  // the pale stone by the porch, sitting a little wrong — a single blunt granite
-  // boulder with clean angular facets, part-sunk and tipped so one flat face lifts;
-  // flat-shaded so the faces catch the light and read as cut rock, not a lump
+  // the stone by the porch, sitting a little wrong — a blunt weathered granite
+  // boulder, part-sunk and tipped, with a cushion of moss over its crown and
+  // shaded face and pale lichen freckling the bare rock
   {
     const krG = new THREE.Group();
-    const g1 = mat(0x9c988a), g2 = mat(0x8c8779);
-    // the boulder: low-poly, only lightly knocked about so the facets stay crisp,
-    // squashed and tipped so it sits like a rock instead of a ball
-    const rock = new THREE.Mesh(jitter(new THREE.IcosahedronGeometry(0.5, 0), 0.055), g1);
-    rock.scale.set(1.0, 0.66, 0.86);
-    rock.rotation.set(0.2, 0.9, 0.14); // tipped a little — the tell it's been lifted
+    const g1 = mat(0x8f8b80), g2 = mat(0x7c7a6f);
+    // the boulder: a dodecahedron softened with a little jitter so it reads as a
+    // real rounded rock, not a crystal; flattened, part-sunk and tipped a touch
+    const rock = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(0.48), 0.07), g1);
+    rock.scale.set(1.05, 0.8, 0.95);
+    rock.rotation.set(0.18, 0.7, 0.12);
     rock.castShadow = true;
     krG.add(rock);
-    // one smaller stone leaned against its base, so it doesn't sit alone
-    const rock2 = new THREE.Mesh(jitter(new THREE.IcosahedronGeometry(0.2, 0), 0.045), g2);
-    rock2.position.set(0.44, -0.05, 0.24);
-    rock2.scale.set(1, 0.8, 1);
-    rock2.rotation.set(0.5, 1.4, 0.3);
-    rock2.castShadow = true;
-    krG.add(rock2);
-    // a thin skin of moss on the shaded foot
-    for (const [mx, mz] of [[-0.22, -0.16], [0.1, 0.26]]) {
-      const moss = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), mat(0x5c6a3c));
-      moss.position.set(mx, -0.12, mz);
-      moss.scale.set(0.2, 0.05, 0.16);
+    // a second lump fused low on one side, breaking the outline
+    const lump = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(0.24), 0.05), g2);
+    lump.position.set(0.34, -0.12, 0.18);
+    lump.rotation.set(0.6, 1.2, 0.3);
+    lump.castShadow = true;
+    krG.add(lump);
+    // a cushion of moss over the crown and shaded north face — several soft mounds
+    // in varied greens, clustered so they read as one living crust
+    const mossTones = [0x556b2f, 0x47601f, 0x63793a, 0x3f5622];
+    const mossSpots = [
+      [-0.05, 0.32, -0.05, 0.34], // crown
+      [-0.22, 0.22, -0.2, 0.26],  // north shoulder
+      [0.14, 0.24, -0.12, 0.24],
+      [-0.3, 0.04, 0.02, 0.2],    // creeping down the shaded side
+      [0.04, 0.08, -0.3, 0.22],
+    ];
+    mossSpots.forEach(([mx, my, mz, mr], i) => {
+      const moss = new THREE.Mesh(new THREE.SphereGeometry(1, 7, 5), mat(mossTones[i % mossTones.length]));
+      moss.position.set(mx, my, mz);
+      moss.scale.set(mr, 0.06, mr); // a low, spreading pad
       krG.add(moss);
+    });
+    // pale lichen freckling the bare rock
+    for (const [lx, ly, lz] of [[0.24, 0.16, 0.12], [-0.08, 0.0, 0.3], [0.28, -0.02, -0.16]]) {
+      const lichen = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), mat(0x9aa47e));
+      lichen.position.set(lx, ly, lz);
+      lichen.scale.set(0.07, 0.02, 0.06);
+      krG.add(lichen);
     }
-    krG.position.set(keyRock.x, groundY(keyRock.x, keyRock.z) + 0.16, keyRock.z);
+    krG.position.set(keyRock.x, groundY(keyRock.x, keyRock.z) + 0.14, keyRock.z);
     scene.add(krG);
   }
 
@@ -5180,14 +5275,14 @@ function questAction(px, pz) {
       } };
     return { label: 'Try the cabin door', key: 'E', fn: () => {
       audio.rattle(); // the knob works against the lock, and holds
-      toast('Locked. By the porch, one pale stone sits a little wrong.');
+      toast('Locked. By the porch, one stone sits a little wrong.');
       if (state.quest >= 1 && state.quest <= 2) state.quest = 3;
     } };
   }
   // the pale stone
   if (state.quest >= 3 && cabinDoor.locked && !has({ 'Key': 1 }) && !keyRock.searched &&
       Math.hypot(px - keyRock.x, pz - keyRock.z) < 2.2)
-    return { label: 'Look under the pale stone', key: 'E', fn: () => {
+    return { label: 'Look under the stone', key: 'E', fn: () => {
       keyRock.searched = true;
       state.stoneT = 3; // knees in the mud, working it loose
       state.moving = false;
@@ -7128,7 +7223,7 @@ function objectiveText() {
     case 2: txt = Math.hypot(state.pos.x - CABIN.x, state.pos.z - CABIN.z) <= 10
       ? 'Enter the cabin.'
       : `Follow the path to the cabin, ${compassWord(CABIN)} (${dist(CABIN)}).`; break;
-    case 3: txt = 'The cabin is locked. One pale stone by the porch sits wrong — look under it.'; break;
+    case 3: txt = 'The cabin is locked. One stone by the porch sits wrong — look under it.'; break;
     case 4: txt = 'Unlock the cabin door with the key.'; break;
     case 5: txt = 'Someone is inside the cabin. Read the letter.'; break;
     case 6: {
